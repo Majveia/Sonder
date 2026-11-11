@@ -113,6 +113,7 @@ uniform float uFade;      // 0..1 fade to black
 uniform float uFlash;     // 0..1 fade to white (added pre-tonemap)
 uniform vec3 uFlashColor;
 uniform float uLetterbox; // 0..1 cinematic bars (to 2.39:1)
+uniform float uGamut;     // < 0: sRGB canvas. 0..1: Display-P3 canvas, 0 = colorimetric, 1 = fully vivid
 
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -212,6 +213,12 @@ void main() {
   col = mix(vec3(l), col, uSaturation);
   col = col * uGain + uLift * (1.0 - col);
   col = max(col, 0.0);
+  if (uGamut >= 0.0) {
+    // Wide-gamut canvas (QD-OLED, recent phones/laptops): map linear sRGB into Display P3, then let
+    // saturated colours stretch part of the way into the wider gamut. Neutrals are untouched.
+    const mat3 SRGB_TO_P3 = mat3(vec3(0.8225, 0.0332, 0.0171), vec3(0.1774, 0.9669, 0.0724), vec3(0.0, 0.0, 0.9108));
+    col = mix(SRGB_TO_P3 * col, col, uGamut);
+  }
   // contrast around mid grey in a perceptual-ish domain; keeps 0 at 0
   col = pow(col, vec3(1.0 / 2.2));
   col = mix(col, col * col * (3.0 - 2.0 * col), clamp(uContrast - 1.0, -1.0, 1.0));
@@ -270,6 +277,8 @@ export class PostFX {
     this.warp = 0; this.fade = 0; this.flash = 0; this.letterbox = 0;
     this.warpCenter = new THREE.Vector2(0.5, 0.5);
     this.flashColor = new THREE.Color(1, 1, 1);
+    /** < 0 = sRGB canvas; 0..1 = Display-P3 canvas with this much gamut expansion (set by Engine). */
+    this.gamut = -1;
 
     this.sceneRT = null;
     this.down = []; this.up = [];
@@ -286,7 +295,7 @@ export class PostFX {
       uLift: { value: new THREE.Vector3() }, uGain: { value: new THREE.Vector3(1, 1, 1) },
       uVignette: { value: 0.3 }, uGrain: { value: 0.03 }, uCA: { value: 0.002 }, uToneMap: { value: 1 },
       uWarp: { value: 0 }, uWarpCenter: { value: this.warpCenter }, uFade: { value: 0 }, uFlash: { value: 0 },
-      uFlashColor: { value: this.flashColor }, uLetterbox: { value: 0 },
+      uFlashColor: { value: this.flashColor }, uLetterbox: { value: 0 }, uGamut: { value: -1 },
     });
   }
 
@@ -374,6 +383,7 @@ export class PostFX {
     f.uLift.value.fromArray(g.lift); f.uGain.value.fromArray(g.gain);
     f.uVignette.value = g.vignette; f.uGrain.value = g.grain; f.uCA.value = g.ca; f.uToneMap.value = g.toneMap;
     f.uWarp.value = this.warp; f.uFade.value = this.fade; f.uFlash.value = this.flash; f.uLetterbox.value = this.letterbox;
+    f.uGamut.value = this.gamut;
     this.finalPass.render(r, null);
   }
 }

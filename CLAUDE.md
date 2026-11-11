@@ -123,6 +123,8 @@ The planet centre is the world origin; "up" is `normalize(position)`.
 **Planet scale** (`scales/planet/index.js`): systems receive `planet` with `desc, sysDesc, model, R,
 gravity, scene, camera, ctx, sunDir, env, player, shared, sunLight, hemiLight, systems` and helpers
 `heightAt(pos)`, `groundRadius(pos)`, `altitudeOf(pos)`, `surfacePoint(dir, lift, out)`, `localHour()`,
-`setLocalHour()`, `leave()`, `customRender`. Every material on a world must use the shared atmosphere
+`setLocalHour()`, `leave()`, `customRender`, plus two registries any system may fill: `planet.interactables`
+(things the player can use: `{ position, radius, prompt, onInteract }`) and colliders
+(`planet.addCollider({ position, radius, height })`, `collidersNear(pos, range, out)`). Every material on a world must use the shared atmosphere
 (`shared.patchMaterial(builtInMaterial)`, or `shared.glsl.pars` + `sonderAtmosphere(color, worldPos)` + `shared.attach(shaderMaterial)`; `sonderSky(dir)` gives sky radiance for reflections)
 so fog, sun and sky agree across terrain, plants, creatures and buildings.

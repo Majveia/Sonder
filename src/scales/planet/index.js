@@ -68,6 +68,20 @@ export default class PlanetScale extends Scale {
       mode: 'fly', // 'foot' | 'bike' | 'ship' | 'fly'
       object: null,
     };
+    /**
+     * Things the player can walk up to and use. Any system may add entries; the player system shows
+     * the prompt for the nearest one in range and calls onInteract() on the `interact` action.
+     *   { position: THREE.Vector3 (world), radius: metres, prompt: string | () => string,
+     *     onInteract(player): void, kind?: 'npc' | 'vehicle' | 'object' | 'door', priority?: number }
+     */
+    this.interactables = new Set();
+    /**
+     * Solid obstacles for the player / vehicles / creatures (kept deliberately simple and cheap):
+     *   { position: THREE.Vector3 (world, base centre on the ground), radius: metres, height: metres }
+     * Upright cylinders along local "up". Systems add big static things (buildings, trunks, boulders).
+     * Use planet.addCollider(c) / planet.removeCollider(c); query with planet.collidersNear(pos, range, out).
+     */
+    this.colliders = new Map(); // coarse spatial hash: cell key -> array
     this.shared = createShared(this);
     this.sunLight = new THREE.DirectionalLight(0xffffff, 3);
     this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
@@ -111,6 +125,21 @@ export default class PlanetScale extends Scale {
   surfacePoint(dir, lift = 0, out = new THREE.Vector3()) {
     const h = this.model.height(dir.x, dir.y, dir.z);
     return out.copy(dir).multiplyScalar(this.R + (this.model.hasOcean && h < 0 ? 0 : h) + lift);
+  }
+  _cellKey(pos) { const c = 64; return `${Math.floor(pos.x / c)},${Math.floor(pos.y / c)},${Math.floor(pos.z / c)}`; }
+  addCollider(c) { const k = this._cellKey(c.position); let a = this.colliders.get(k); if (!a) this.colliders.set(k, (a = [])); a.push(c); c._cell = k; return c; }
+  removeCollider(c) { const a = this.colliders.get(c._cell); if (a) { const i = a.indexOf(c); if (i >= 0) a.splice(i, 1); if (!a.length) this.colliders.delete(c._cell); } }
+  /** Collect colliders within `range` metres of pos (range <= 64). Returns `out`. */
+  collidersNear(pos, range = 16, out = []) {
+    out.length = 0; const c = 64;
+    const x0 = Math.floor((pos.x - range) / c), x1 = Math.floor((pos.x + range) / c);
+    const y0 = Math.floor((pos.y - range) / c), y1 = Math.floor((pos.y + range) / c);
+    const z0 = Math.floor((pos.z - range) / c), z1 = Math.floor((pos.z + range) / c);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+      const a = this.colliders.get(`${x},${y},${z}`); if (!a) continue;
+      for (let i = 0; i < a.length; i++) { const o = a[i]; const r = range + o.radius; if (o.position.distanceToSquared(pos) < r * r) out.push(o); }
+    }
+    return out;
   }
   /** Local solar time (hours 0..24) at a world direction. */
   localHour(dir) {

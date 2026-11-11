@@ -18,6 +18,16 @@ export class Engine {
     this.renderer.setClearColor(0x000000, 1);
     this.renderer.info.autoReset = false;
     this.post = new PostFX(this.renderer, this.quality);
+    // Wide-gamut output where the display can show it (?gamut=srgb forces sRGB, ?vivid=0..1 tunes expansion).
+    this.wideGamut = false;
+    try {
+      const gl = this.renderer.getContext();
+      if (params.gamut !== 'srgb' && 'drawingBufferColorSpace' in gl && matchMedia('(color-gamut: p3)').matches) {
+        gl.drawingBufferColorSpace = 'display-p3';
+        this.wideGamut = gl.drawingBufferColorSpace === 'display-p3';
+      }
+    } catch { /* stay in sRGB */ }
+    if (this.wideGamut) this.post.gamut = params.vivid !== undefined ? Math.max(0, Math.min(1, Number(params.vivid))) : 0.4;
     this.input = new Input(canvas);
     this.size = { width: 1, height: 1, pixelRatio: 1 };
     this.time = 0;          // seconds of engine time (affected by timeScale / pause)
