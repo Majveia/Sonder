@@ -7,6 +7,15 @@
 //   input.pointer {x, y, nx, ny, down, over}  last pointer position (px and NDC)
 //   input.onTap(cb)  click / tap without drag -> cb({x, y, nx, ny, button})
 // A scale picks the control scheme on enter(): input.setScheme({ pointerLock, joystick }).
+//
+// Additions (all optional for scales; used by the UI layer):
+//   input.device            'keyboard' | 'touch' | 'gamepad' — last device used; input.onDevice(cb)
+//   input.settings          { sensitivity: 1, invertY: false } applied to `look` (menu writes it)
+//   input.block(key) / unblock(key) / blocked   suspend gameplay input (pause menu) without touching `enabled`
+//   input.consume(actionOrCode)   swallow a pending press so no scale sees it this frame
+//   input.onLock(cb)        pointer-lock changes -> cb(locked);  input.lockPointer() / unlockPointer()
+//   Esc while the pointer is locked only releases the pointer; a second Esc reaches `back_out`.
+//   The touch stick has a radial dead-zone (stick.deadzone) and a haptic tick where supported.
 
 const DEFAULT_ACTIONS = {
   forward: ['KeyW', 'ArrowUp'],
@@ -27,7 +36,9 @@ const DEFAULT_ACTIONS = {
   time: ['KeyT'],
   photo: ['KeyP'],
   help: ['KeyH'],
+  menu: ['KeyO'],             // pause / options menu (handled by the UI)
 };
+const haptic = (ms) => { try { navigator.vibrate?.(ms); } catch { /* unsupported */ } };
 
 export class Input {
   constructor(canvas) {
@@ -43,7 +54,13 @@ export class Input {
     this.sensitivity = { mouse: 0.0022, touch: 0.0052, pad: 2.6 };
     this.enabled = true;       // set false to ignore gameplay input (intro, menus)
     /** virtual stick visual state for the UI layer */
-    this.stick = { active: false, ox: 0, oy: 0, x: 0, y: 0, radius: 54 };
+    this.stick = { active: false, ox: 0, oy: 0, x: 0, y: 0, radius: 54, deadzone: 0.12, sx: 0, sy: 0 };
+    this.device = this.isTouch ? 'touch' : 'keyboard';
+    this.settings = { sensitivity: 1, invertY: false };
+    this._blocks = new Set();
+    this._lockCbs = new Set();
+    this._deviceCbs = new Set();
+    this._unlockAt = -1e9;
 
     this._codes = new Set();
     this._hitCodes = new Set();
@@ -67,15 +84,39 @@ export class Input {
     this.stick.active = false;
   }
 
+  /** true while something (pause menu …) suspends gameplay input */
+  get blocked() { return this._blocks.size > 0; }
+  block(key = 'ui') { this._blocks.add(key); this._vHeld.clear(); this.stick.active = false; }
+  unblock(key = 'ui') { this._blocks.delete(key); }
+  /** Swallow a pending press (action name or key code) so nothing reads it this frame. */
+  consume(name) {
+    const codes = this.actions[name] || [name];
+    for (const c of codes) { this._hitCodes.delete(c); this._codes.delete(c); }
+    this._vHit.delete(name); this._vHeld.delete(name);
+  }
+  onLock(cb) { this._lockCbs.add(cb); return () => this._lockCbs.delete(cb); }
+  onDevice(cb) { this._deviceCbs.add(cb); return () => this._deviceCbs.delete(cb); }
+  lockPointer() {
+    const c = this.canvas;
+    if (this.locked || !c.requestPointerLock) return;
+    try { const p = c.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch { /* headless / denied */ }
+  }
+  unlockPointer() { if (document.pointerLockElement) document.exitPointerLock(); }
+  _setDevice(d) {
+    if (this.device === d) return;
+    this.device = d;
+    for (const cb of this._deviceCbs) cb(d);
+  }
+
   held(action) {
-    if (!this.enabled) return false;
+    if (!this.enabled || this._blocks.size) return false;
     if (this._vHeld.has(action)) return true;
     const codes = this.actions[action];
     if (codes) { for (const c of codes) if (this._codes.has(c)) return true; return false; }
     return this._codes.has(action);
   }
   hit(action) {
-    if (!this.enabled) return false;
+    if (!this.enabled || this._blocks.size) return false;
     if (this._vHit.has(action)) return true;
     const codes = this.actions[action];
     if (codes) { for (const c of codes) if (this._hitCodes.has(c)) return true; return false; }
@@ -101,26 +142,36 @@ export class Input {
     if (this._has('left')) mx -= 1;
     if (this._has('forward')) my += 1;
     if (this._has('back')) my -= 1;
-    if (this.stick.active) { mx += this.stick.x; my -= this.stick.y; }
+    if (this.stick.active) {
+      // radial dead-zone, rescaled so the stick still reaches full deflection
+      const sl = Math.hypot(this.stick.x, this.stick.y), dzs = this.stick.deadzone;
+      const k = sl <= dzs ? 0 : (sl - dzs) / (1 - dzs) / sl;
+      this.stick.sx = this.stick.x * k; this.stick.sy = this.stick.y * k;
+      mx += this.stick.sx; my -= this.stick.sy;
+    }
     let lx = this._lookAcc.x, ly = this._lookAcc.y;
     // gamepad
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const pad of pads) {
       if (!pad || !pad.connected) continue;
       const dz = (v) => (Math.abs(v) < 0.14 ? 0 : (v - Math.sign(v) * 0.14) / 0.86);
-      mx += dz(pad.axes[0] || 0); my -= dz(pad.axes[1] || 0);
+      const ax = dz(pad.axes[0] || 0), ay = dz(pad.axes[1] || 0);
+      mx += ax; my -= ay;
       const rx = dz(pad.axes[2] || 0), ry = dz(pad.axes[3] || 0);
+      if (ax || ay || rx || ry) this._setDevice('gamepad');
       lx += rx * Math.abs(rx) * this.sensitivity.pad * dt; ly += ry * Math.abs(ry) * this.sensitivity.pad * dt;
       const map = ['jump', 'descend', 'interact', 'view', 'rollLeft', 'rollRight', 'brake', 'sprint', 'map', 'back_out', 'alt'];
       for (let i = 0; i < map.length; i++) {
         const down = !!(pad.buttons[i] && pad.buttons[i].pressed);
-        if (down !== !!this._padPrev[i]) { this.setVirtual(map[i], down); this._padPrev[i] = down; if (down) this._gesture(); }
+        if (down !== !!this._padPrev[i]) { this.setVirtual(map[i], down); this._padPrev[i] = down; if (down) { this._setDevice('gamepad'); this._gesture(); } }
       }
       break;
     }
     const len = Math.hypot(mx, my);
     if (len > 1) { mx /= len; my /= len; }
-    if (this.enabled) {
+    const sens = this.settings.sensitivity || 1;
+    lx *= sens; ly *= sens * (this.settings.invertY ? -1 : 1);
+    if (this.enabled && !this._blocks.size) {
       this.move.x = mx; this.move.y = my;
       this.look.x = lx; this.look.y = ly;
       this.zoom = this._zoomAcc;
@@ -141,7 +192,7 @@ export class Input {
     this.pointer.ny = -((this.pointer.y / r.height) * 2 - 1);
   }
   _tap(button = 0) {
-    if (!this.enabled) return;
+    if (!this.enabled || this._blocks.size) return;
     const p = this.pointer;
     for (const cb of this._tapCbs) cb({ x: p.x, y: p.y, nx: p.nx, ny: p.ny, button });
   }
@@ -152,8 +203,17 @@ export class Input {
     window.addEventListener('keydown', (e) => {
       if (e.metaKey || e.altKey) return;
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
-      if (!e.repeat) { this._codes.add(e.code); this._hitCodes.add(e.code); this._gesture(); for (const cb of this._keyCbs) cb(e.code, e); }
+      if (e.repeat) return;
+      this._setDevice('keyboard');
+      // Esc while the pointer is (or was just) locked only releases the pointer — never a `back_out`.
+      if (e.code === 'Escape' && (this.locked || performance.now() - this._unlockAt < 450)) {
+        this._gesture(); for (const cb of this._keyCbs) cb('PointerRelease', e);
+        return;
+      }
+      this._codes.add(e.code); this._hitCodes.add(e.code); this._gesture(); for (const cb of this._keyCbs) cb(e.code, e);
     });
+    window.addEventListener('pointerdown', (e) => this._setDevice(e.pointerType === 'touch' ? 'touch' : e.pointerType === 'pen' ? 'touch' : 'keyboard'), true);
+    window.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' && (Math.abs(e.movementX) + Math.abs(e.movementY) > 2)) this._setDevice('keyboard'); }, true);
     window.addEventListener('keyup', (e) => { this._codes.delete(e.code); });
     window.addEventListener('blur', () => { this._codes.clear(); this._vHeld.clear(); this._mouse.down = false; });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -163,7 +223,7 @@ export class Input {
       this._gesture();
       this._setPointer(e.clientX, e.clientY);
       this._mouse.down = true; this._mouse.moved = 0; this._mouse.button = e.button; this.pointer.down = true;
-      if (this.scheme.pointerLock && !this.locked && this.enabled && c.requestPointerLock) {
+      if (this.scheme.pointerLock && !this.locked && this.enabled && !this._blocks.size && c.requestPointerLock) {
         try { const p = c.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch { /* headless / denied */ }
       }
     });
@@ -192,7 +252,12 @@ export class Input {
       const k = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
       this._zoomAcc += Math.max(-3, Math.min(3, (e.deltaY * k) / 120));
     }, { passive: false });
-    document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === c; });
+    document.addEventListener('pointerlockchange', () => {
+      const was = this.locked;
+      this.locked = document.pointerLockElement === c;
+      if (was && !this.locked) { this._unlockAt = performance.now(); this._codes.clear(); }
+      if (was !== this.locked) for (const cb of this._lockCbs) cb(this.locked);
+    });
 
     // touch
     const touchStart = (e) => {
@@ -205,6 +270,7 @@ export class Input {
         if (this.scheme.joystick && !this.stick.active && x < r.width * 0.45 && y > r.height * 0.25) {
           role = 'stick';
           this.stick.active = true; this.stick.ox = x; this.stick.oy = y; this.stick.x = 0; this.stick.y = 0;
+          haptic(6);
         }
         this._touches.set(t.identifier, { role, sx: x, sy: y, x, y, t0: performance.now(), moved: 0 });
       }
