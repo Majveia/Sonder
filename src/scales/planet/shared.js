@@ -5,7 +5,10 @@
 //   const shared = createShared(planet);
 //   shared.uniforms              { uTime, uSunDir, uSunColor, uSkyColor, uGroundColor, uFogColor, uFogDensity,
 //                                  uCamPos, uCamWorld, uPlanetR, uNight, uWind }   (objects shared by reference)
-//   shared.glsl.pars             GLSL declarations + `vec3 sonderAtmosphere(vec3 color, vec3 worldPos)`
+//   shared.glsl.pars             GLSL declarations +
+//                                  `vec3 sonderAtmosphere(vec3 color, vec3 worldPos)`  aerial perspective for a lit surface
+//                                  `vec3 sonderSky(vec3 dir)`                          sky radiance in a world direction (no sun disc)
+//                                                                                      — for reflections and ambient
 //   shared.patchMaterial(mat)    make any built-in three material (Standard/Lambert/Basic/...) apply the
 //                                shared atmosphere; returns the material. Safe to call once per material.
 //   shared.attach(shaderMat)     merge the shared uniforms into a ShaderMaterial's uniforms (by reference)
@@ -49,6 +52,14 @@ uniform mat4 uCamWorld;
 uniform float uPlanetR;
 uniform float uNight;
 uniform vec4 uWind;
+// Sky radiance in a world-space direction (without the sun disc). Used for reflections / ambient.
+vec3 sonderSky(vec3 dir) {
+  vec3 up = normalize(uCamPos);
+  float e = dot(dir, up);
+  vec3 sky = mix(uFogColor, uSkyColor, pow(clamp(e, 0.0, 1.0), 0.45));
+  sky += uSunColor * pow(max(dot(dir, uSunDir), 0.0), 24.0) * 0.08 * (1.0 - uNight);
+  return mix(sky, uGroundColor, smoothstep(0.0, -0.25, e));
+}
 // Aerial perspective: blend a lit surface colour toward the atmosphere along the view ray.
 vec3 sonderAtmosphere(vec3 color, vec3 worldPos) {
   vec3 ray = worldPos - uCamPos;

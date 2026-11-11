@@ -124,5 +124,5 @@ The planet centre is the world origin; "up" is `normalize(position)`.
 gravity, scene, camera, ctx, sunDir, env, player, shared, sunLight, hemiLight, systems` and helpers
 `heightAt(pos)`, `groundRadius(pos)`, `altitudeOf(pos)`, `surfacePoint(dir, lift, out)`, `localHour()`,
 `setLocalHour()`, `leave()`, `customRender`. Every material on a world must use the shared atmosphere
-(`shared.patchMaterial(builtInMaterial)` or `shared.glsl.pars` + `sonderAtmosphere()` + `shared.attach`)
+(`shared.patchMaterial(builtInMaterial)`, or `shared.glsl.pars` + `sonderAtmosphere(color, worldPos)` + `shared.attach(shaderMaterial)`; `sonderSky(dir)` gives sky radiance for reflections)
 so fog, sun and sky agree across terrain, plants, creatures and buildings.
