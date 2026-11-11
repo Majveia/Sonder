@@ -13,6 +13,7 @@
 //   ui.setReticle('none' | 'dot' | 'ring')
 //   ui.setVisible(bool)                      hide the whole HUD (cinematics / photo mode)
 //   ui.clearContext()                        called automatically on every scale change
+//   ui.gate({ title, sub, hint }) -> Promise resolved by the first user gesture (needed to unlock audio)
 
 const el = (tag, cls, parent, text) => {
   const e = document.createElement(tag);
@@ -122,6 +123,25 @@ export class UI {
   }
   setReticle(kind = 'none') { this.elReticle.className = `ui-reticle ${kind}`; }
   setVisible(v) { this.root.classList.toggle('hidden', !v); }
+
+  /** Opening gate: a quiet title that waits for a click / tap / key (browsers need a gesture for audio). */
+  gate({ title = 'SONDER', sub = '', hint = this.input.isTouch ? 'touch to begin' : 'click to begin' } = {}) {
+    return new Promise((resolve) => {
+      const g = el('div', 'ui-gate', this.root.parentNode);
+      el('div', 'ui-gate-title', g, title);
+      if (sub) el('div', 'ui-gate-sub', g, sub);
+      el('div', 'ui-gate-hint', g, hint);
+      requestAnimationFrame(() => g.classList.add('on'));
+      const done = (e) => {
+        e.preventDefault();
+        window.removeEventListener('keydown', done); g.removeEventListener('pointerdown', done);
+        g.classList.remove('on'); g.classList.add('out');
+        setTimeout(() => g.remove(), 1600);
+        resolve();
+      };
+      g.addEventListener('pointerdown', done); window.addEventListener('keydown', done);
+    });
+  }
 
   clearContext() {
     for (const id of [...this.labels.keys()]) this.removeLabel(id);

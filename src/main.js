@@ -3,7 +3,7 @@
 // URL parameters (all optional; handy for testing and deep links):
 //   scale=cosmic|galaxy|system|planet   start directly in a scale (skips the intro)
 //   galaxy=<id> star=<index> planet=<index>   address (defaults to the home system: 0 / 1 / 2)
-//   intro=0            skip the cinematic intro
+//   intro=0            skip the cinematic intro        gate=0   skip the click-to-begin gate
 //   quality=low|medium|high|ultra   dpr=<cap>   msaa=<n>   dynres=0
 //   mute=1   hud=0   seed=<universe seed>
 // plus scale-specific debug parameters documented in each scale.
@@ -65,7 +65,11 @@ async function boot() {
   const startScale = params.scale || 'cosmic';
   const playIntro = !params.scale && params.intro !== '0';
   if (playIntro) { ctx.ui.setVisible(false); engine.input.enabled = false; }
-  await scales.go(startScale, { ...address, intro: playIntro }, { style: 'fade', in: playIntro ? 0.01 : 1.6 });
+  // Start building the first scale immediately; the gate (which doubles as the audio unlock —
+  // browsers require a gesture before sound) sits on top while the universe assembles behind it.
+  const arrived = scales.go(startScale, { ...address, intro: playIntro }, { style: 'fade', in: playIntro ? 0.01 : 1.6 });
+  if (playIntro && params.gate !== '0') { await ctx.ui.gate({ sub: 'a universe, simulated' }); ctx.audio.unlock(); }
+  await arrived;
   if (playIntro) {
     try { await runIntro(ctx); } catch (err) { console.error('[intro]', err); }
     engine.input.enabled = true;
