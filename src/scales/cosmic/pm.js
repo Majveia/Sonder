@@ -355,18 +355,23 @@ export class PMSim {
   }
 
   /**
-   * Per-particle (log density, "heat") bytes from a CIC density + NGP velocity dispersion estimate
-   * on a grid of nd cells per side (no FFT needed, any size).
+   * One byte per particle: 5 bits log density (high bit) | 3 bits "heat" (velocity dispersion).
+   * Density = fine CIC on an `nd`³ grid with the particle's own contribution removed (so lone void
+   * particles read as empty, filaments stay sharp) blended with the force-mesh CIC field (stable).
+   * Heat = NGP velocity dispersion on an `nh`³ grid. log10 ρ/ρ̄ ∈ [−1.2, 3.3] → 0..31 (dithered).
    */
-  packFields(out, nd) {
-    const N = this.N, x = this.x, p = this.p, M = this.M, s = nd / M, nd2 = nd * nd, nd3 = nd2 * nd;
-    if (!this._fd || this._fd.length !== nd3) {
-      this._fd = new Float32Array(nd3); this._fn = new Float32Array(nd3);
-      this._fpx = new Float32Array(nd3); this._fpy = new Float32Array(nd3); this._fpz = new Float32Array(nd3); this._fp2 = new Float32Array(nd3);
+  packFields(out, nd, nh) {
+    const N = this.N, x = this.x, p = this.p, M = this.M, M2 = M * M;
+    const s = nd / M, nd2 = nd * nd, nd3 = nd2 * nd;
+    const sh = nh / M, nh2 = nh * nh, nh3 = nh2 * nh;
+    if (!this._fd || this._fd.length !== nd3) this._fd = new Float32Array(nd3);
+    if (!this._fn || this._fn.length !== nh3) {
+      this._fn = new Float32Array(nh3); this._fpx = new Float32Array(nh3); this._fpy = new Float32Array(nh3); this._fpz = new Float32Array(nh3); this._fp2 = new Float32Array(nh3);
     }
     const den = this._fd, cnt = this._fn, spx = this._fpx, spy = this._fpy, spz = this._fpz, sp2 = this._fp2;
     den.fill(0); cnt.fill(0); spx.fill(0); spy.fill(0); spz.fill(0); sp2.fill(0);
     const w = nd3 / N;
+    const cell = (px, py, pz, n) => ((((Math.floor(pz) % n) + n) % n) * n + (((Math.floor(py) % n) + n) % n)) * n + (((Math.floor(px) % n) + n) % n);
     for (let i = 0; i < N; i++) {
       const px = x[i * 3] * s - 0.5, py = x[i * 3 + 1] * s - 0.5, pz = x[i * 3 + 2] * s - 0.5;
       let ix = Math.floor(px), iy = Math.floor(py), iz = Math.floor(pz);
@@ -379,14 +384,13 @@ export class PMSim {
       den[a0 + b1 + ix] += gx * fy * gz * w; den[a0 + b1 + jx] += fx * fy * gz * w;
       den[a1 + b0 + ix] += gx * gy * fz * w; den[a1 + b0 + jx] += fx * gy * fz * w;
       den[a1 + b1 + ix] += gx * fy * fz * w; den[a1 + b1 + jx] += fx * fy * fz * w;
-      // NGP velocity moments (peculiar velocity ∝ p / a)
-      const c = ((Math.floor(pz + 0.5) + nd) % nd) * nd2 + ((Math.floor(py + 0.5) + nd) % nd) * nd + ((Math.floor(px + 0.5) + nd) % nd);
+      const c = cell(x[i * 3] * sh, x[i * 3 + 1] * sh, x[i * 3 + 2] * sh, nh);
       const vx = p[i * 3], vy = p[i * 3 + 1], vz = p[i * 3 + 2];
       cnt[c] += 1; spx[c] += vx; spy[c] += vy; spz[c] += vz; sp2[c] += vx * vx + vy * vy + vz * vz;
     }
-    // velocity scale: peculiar velocity v = p / a (code units, cells·H0); normalise heat by the
-    // typical cell crossing speed so the byte means roughly the same thing at every epoch.
     const vscale = 1 / Math.max(1e-6, this.a);
+    const dm = this.deltaMesh;
+    let seed = (Math.floor(this.a * 1e6) * 2654435761) >>> 0;
     for (let i = 0; i < N; i++) {
       const px = x[i * 3] * s - 0.5, py = x[i * 3 + 1] * s - 0.5, pz = x[i * 3 + 2] * s - 0.5;
       let ix = Math.floor(px), iy = Math.floor(py), iz = Math.floor(pz);
@@ -395,21 +399,37 @@ export class PMSim {
       const jx = (ix + 1) % nd, jy = (iy + 1) % nd, jz = (iz + 1) % nd;
       const gx = 1 - fx, gy = 1 - fy, gz = 1 - fz;
       const a0 = iz * nd2, a1 = jz * nd2, b0 = iy * nd, b1 = jy * nd;
-      const d = den[a0 + b0 + ix] * gx * gy * gz + den[a0 + b0 + jx] * fx * gy * gz + den[a0 + b1 + ix] * gx * fy * gz + den[a0 + b1 + jx] * fx * fy * gz
-        + den[a1 + b0 + ix] * gx * gy * fz + den[a1 + b0 + jx] * fx * gy * fz + den[a1 + b1 + ix] * gx * fy * fz + den[a1 + b1 + jx] * fx * fy * fz;
-      // log10(ρ/ρ̄) from −1.5 .. +3.5 → 0..255
-      const ld = Math.log10(Math.max(1e-3, d));
-      out[i * 2] = Math.max(0, Math.min(255, Math.round((ld + 1.5) / 5 * 255)));
-      const c = ((Math.floor(pz + 0.5) + nd) % nd) * nd2 + ((Math.floor(py + 0.5) + nd) % nd) * nd + ((Math.floor(px + 0.5) + nd) % nd);
+      const w000 = gx * gy * gz, w100 = fx * gy * gz, w010 = gx * fy * gz, w110 = fx * fy * gz, w001 = gx * gy * fz, w101 = fx * gy * fz, w011 = gx * fy * fz, w111 = fx * fy * fz;
+      let d = den[a0 + b0 + ix] * w000 + den[a0 + b0 + jx] * w100 + den[a0 + b1 + ix] * w010 + den[a0 + b1 + jx] * w110
+        + den[a1 + b0 + ix] * w001 + den[a1 + b0 + jx] * w101 + den[a1 + b1 + ix] * w011 + den[a1 + b1 + jx] * w111;
+      d -= w * (w000 * w000 + w100 * w100 + w010 * w010 + w110 * w110 + w001 * w001 + w101 * w101 + w011 * w011 + w111 * w111);
+      // coarse (force mesh) density at the particle
+      let dc = 1;
+      if (dm) {
+        const qx = x[i * 3] - 0.5, qy = x[i * 3 + 1] - 0.5, qz = x[i * 3 + 2] - 0.5;
+        let kx = Math.floor(qx), ky = Math.floor(qy), kz = Math.floor(qz);
+        const ex = qx - kx, ey = qy - ky, ez = qz - kz;
+        kx = (kx + M) % M; ky = (ky + M) % M; kz = (kz + M) % M;
+        const lx = (kx + 1) % M, ly = (ky + 1) % M, lz = (kz + 1) % M;
+        const hx = 1 - ex, hy = 1 - ey, hz = 1 - ez;
+        dc = 1 + dm[kz * M2 + ky * M + kx] * hx * hy * hz + dm[kz * M2 + ky * M + lx] * ex * hy * hz + dm[kz * M2 + ly * M + kx] * hx * ey * hz + dm[kz * M2 + ly * M + lx] * ex * ey * hz
+          + dm[lz * M2 + ky * M + kx] * hx * hy * ez + dm[lz * M2 + ky * M + lx] * ex * hy * ez + dm[lz * M2 + ly * M + kx] * hx * ey * ez + dm[lz * M2 + ly * M + lx] * ex * ey * ez;
+      }
+      const rho = 0.72 * Math.max(0, d) + 0.28 * Math.max(0, dc);
+      seed = (Math.imul(seed ^ (seed >>> 15), 0x2c1b3c6d) + 0x9e3779b9) >>> 0;
+      const dither = (seed / 4294967296) - 0.5;
+      const ld = Math.log10(Math.max(1e-3, rho));
+      const db = Math.max(0, Math.min(31, Math.round((ld + 1.2) / 4.5 * 31 + dither)));
+      const c = cell(x[i * 3] * sh, x[i * 3 + 1] * sh, x[i * 3 + 2] * sh, nh);
       const n = cnt[c];
       let sig = 0;
       if (n > 1.5) {
         const mx = spx[c] / n, my = spy[c] / n, mz = spz[c] / n;
         sig = Math.sqrt(Math.max(0, sp2[c] / n - (mx * mx + my * my + mz * mz))) * vscale;
       }
-      // σ_v in cells per Hubble time: log map 0.03 .. 30
       const lh = Math.log10(Math.max(1e-3, sig));
-      out[i * 2 + 1] = Math.max(0, Math.min(255, Math.round((lh + 1.5) / 3 * 255)));
+      const hb = Math.max(0, Math.min(7, Math.round((lh + 1.5) / 3 * 7)));
+      out[i] = (db << 3) | hb;
     }
     return out;
   }

@@ -91,32 +91,35 @@ const KINDS = {
   },
   soil(u, v, s) {
     // dirt: clods, small pebbles, drying cracks
-    const c = worley(u, v, 9, s, 0.95), crack = sstep(0.06, 0.0, c[1] - c[0]);
-    const p = worley(u, v, 48, s + 3, 1.0), peb = (1 - sstep(0.18, 0.36, p[0])) * (p[2] > 0.72 ? 1 : 0);
+    const c = worley(u + fbm(u, v, 5, 2, s + 9) * 0.05, v, 9, s, 0.95), crack = sstep(0.035, 0.0, c[1] - c[0]) * sstep(0.0, 0.4, fbm(u, v, 4, 2, s + 8)) * 0.7;
+    const p = worley(u, v, 48, s + 3, 1.0), peb = (1 - sstep(0.18, 0.36, p[0])) * (p[2] > 0.88 ? 1 : 0);
     const n = fbm(u, v, 10, 4, s + 5);
     const h = 0.45 + n * 0.22 - crack * 0.25 + peb * 0.35;
     const l = 0.5 + n * 0.1 - crack * 0.18 + peb * (p[2] - 0.6) * 0.9;
     return [h, l];
   },
   rock(u, v, s) {
-    // rough rock: fractured plates with sharp crack network and lichen-ish speckle
-    const w = worley(u, v, 6, s, 0.95), edge = w[1] - w[0], pid = w[2];
-    const crack = sstep(0.07, 0.0, edge) + 0.5 * sstep(0.03, 0.0, worley(u, v, 17, s + 9, 0.9)[1] - _wo[0]);
-    const plate = (pid - 0.5) * 0.2;
-    const n = fbm(u, v, 8, 5, s + 2, 0.55);
-    const h = 0.55 + n * 0.3 + plate - crack * 0.3;
+    // weathered rock: lumpy fBm body, sparse warped fractures, grit and lichen speckle
+    const wu = u + fbm(u, v, 4, 3, s + 31) * 0.06, wv = v + fbm(u, v, 4, 3, s + 37) * 0.06;
+    const w = worley(wu, wv, 5, s, 0.95), edge = w[1] - w[0], pid = w[2];
+    const crack = sstep(0.045, 0.0, edge) * sstep(-0.3, 0.2, fbm(u, v, 6, 2, s + 41));
+    const plate = (pid - 0.5) * 0.12;
+    const n = fbm(u, v, 6, 6, s + 2, 0.55), r = 1 - Math.abs(fbm(u, v, 10, 4, s + 5));
+    const h = 0.5 + n * 0.32 + r * r * 0.15 + plate - crack * 0.25;
     const speck = ihash((u * 512) | 0, (v * 512) | 0, s + 1);
-    const l = 0.5 + n * 0.14 + plate * 0.6 - crack * 0.22 + (speck > 0.985 ? 0.12 : 0) + fbm(u, v, 3, 2, s + 4) * 0.08;
+    const l = 0.5 + n * 0.16 + plate * 0.5 - crack * 0.16 + (speck > 0.985 ? 0.1 : 0) - (speck < 0.01 ? 0.1 : 0) + fbm(u, v, 3, 2, s + 4) * 0.1;
     return [h, l];
   },
   cliff(u, v, s) {
-    // big angular blocks with flat facets (Worley distance ridges), deep joints
-    const w = worley(u, v, 4, s, 0.9), edge = w[1] - w[0];
-    const facet = (w[2] - 0.5) * 0.35 + w[0] * 0.25;
-    const joint = sstep(0.09, 0.0, edge);
-    const n = fbm(u, v, 12, 4, s + 6, 0.5);
-    const h = 0.5 + facet + n * 0.16 - joint * 0.35;
-    const l = 0.5 + facet * 0.35 + n * 0.1 - joint * 0.25 + fbm(u, v, 2, 2, s + 1) * 0.1;
+    // fractured faces: strongly warped, stretched blocks with soft facets, thin joints, rain streaks
+    const wu = u + fbm(u, v, 3, 3, s + 11) * 0.12, wv = v + fbm(u, v, 3, 3, s + 13) * 0.12;
+    const w = worley(wu * 2, wv, 3, s, 0.9), edge = w[1] - w[0];
+    const facet = (w[2] - 0.5) * 0.22 + w[0] * 0.15;
+    const joint = sstep(0.05, 0.0, edge) * 0.8;
+    const n = fbm(u, v, 8, 5, s + 6, 0.55);
+    const streak = fbm(u * 8, v * 0.6, 8, 3, s + 9) * 0.5;
+    const h = 0.5 + facet + n * 0.25 - joint * 0.3;
+    const l = 0.5 + facet * 0.3 + n * 0.12 - joint * 0.18 + streak * 0.12 + fbm(u, v, 2, 2, s + 1) * 0.1;
     return [h, l];
   },
   snow(u, v, s) {

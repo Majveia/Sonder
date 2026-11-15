@@ -19,6 +19,10 @@
 export const MATERIALS = ['sand', 'grass', 'grassDry', 'forest', 'soil', 'rock', 'cliff', 'snow'];
 export const M = { sand: 0, grass: 1, grassDry: 2, forest: 3, soil: 4, rock: 5, cliff: 6, snow: 7 };
 
+/** Biome slope is measured over SLOPE_SPAN metres on the terrain without octaves shorter than SLOPE_WL
+ *  metres, so ground cover does not flicker with 1-m bumps and is identical at every mesh LOD finer than that. */
+export const SLOPE_SPAN = 4, SLOPE_WL = 8;
+
 const ss = (a, b, x) => { let t = (x - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
 const sat = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
@@ -112,12 +116,12 @@ const _cfgCache = new WeakMap();
 
 /**
  * Ground cover at a unit direction (x,y,z) on `model` — matches what the terrain shader paints.
- * opts.minWavelength (default 0 = full detail), opts.span (m, slope finite-difference step, default 1.5).
+ * opts.minWavelength (default 0 = full detail) for the height; slope uses SLOPE_SPAN / SLOPE_WL.
  */
 export function biomeAt(model, x, y, z, out = {}, opts = {}) {
   let cfg = _cfgCache.get(model);
   if (!cfg) { cfg = biomeConfig(model.desc); _cfgCache.set(model, cfg); }
-  const wl = opts.minWavelength || 0, span = opts.span || 1.5;
+  const wl = opts.minWavelength || 0, span = SLOPE_SPAN, swl = Math.max(SLOPE_WL, wl);
   const h = model.height(x, y, z, wl);
   // slope from two tangent finite differences
   let tx = -z, tz = x; let l = Math.hypot(tx, tz);
@@ -125,8 +129,8 @@ export function biomeAt(model, x, y, z, out = {}, opts = {}) {
   tx /= l; tz /= l;
   const bx = y * tz, by = z * tx - x * tz, bz = -y * tx;
   const e = span / model.R;
-  const h1 = hAt(model, x + tx * e, y, z + tz * e, wl), h2 = hAt(model, x + bx * e, y + by * e, z + bz * e, wl);
-  const h3 = hAt(model, x - tx * e, y, z - tz * e, wl), h4 = hAt(model, x - bx * e, y - by * e, z - bz * e, wl);
+  const h1 = hAt(model, x + tx * e, y, z + tz * e, swl), h2 = hAt(model, x + bx * e, y + by * e, z + bz * e, swl);
+  const h3 = hAt(model, x - tx * e, y, z - tz * e, swl), h4 = hAt(model, x - bx * e, y - by * e, z - bz * e, swl);
   const gx = (h1 - h3) / (2 * span), gy = (h2 - h4) / (2 * span);
   const g2 = gx * gx + gy * gy;
   const slope = Math.sqrt(g2 / (1 + g2));

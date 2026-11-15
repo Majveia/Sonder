@@ -8,7 +8,7 @@
 // Vertex layout: main grid index j*(N+1)+i (i along the face's `a` axis = s, j along `b` = t),
 // then the skirt ring: bottom edge (j=0), top edge (j=N), left edge (i=0), right edge (i=N), each N+1 long.
 import { faceDir, nodeBounds, nodeSize } from './cube.js';
-import { biomeConfig, biomeWeights, jitterAt, macroAt } from './biome.js';
+import { biomeConfig, biomeWeights, jitterAt, macroAt, SLOPE_SPAN, SLOPE_WL } from './biome.js';
 
 /** Shared index buffer for every chunk with `N` segments (Uint16 when it fits). */
 export function buildIndices(N) {
@@ -79,7 +79,6 @@ export function buildChunk(model, job, cfg = biomeConfig(model.desc)) {
   const w0 = new Uint8Array(count * 4), w1 = new Uint8Array(count * 4);
   const data = new Float32Array(count * 4); // height, curvature, macro1, macro2
   let minH = Infinity, maxH = -Infinity, br2 = 0;
-  const inv = 1 / (2 * spacing);
 
   for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) {
     const g = (j + 1) * G + (i + 1), v = j * V + i;
@@ -94,8 +93,22 @@ export function buildChunk(model, job, cfg = biomeConfig(model.desc)) {
     let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
     const nl = 1 / Math.sqrt(nx * nx + ny * ny + nz * nz); nx *= nl; ny *= nl; nz *= nl;
     normal[v * 3] = nx; normal[v * 3 + 1] = ny; normal[v * 3 + 2] = nz;
-    const cosA = nx * x + ny * y + nz * z;
-    const slope = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+    let slope;
+    if (spacing * 2 >= SLOPE_SPAN) {
+      const cosA = nx * x + ny * y + nz * z;
+      slope = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+    } else {
+      // fine LODs: same measurement as biomeAt() (wide span, smoothed terrain) so cover is LOD-independent
+      let tx = -z, tz = x; let tl = Math.hypot(tx, tz);
+      if (tl < 1e-5) { tx = 1; tz = 0; tl = 1; }
+      tx /= tl; tz /= tl;
+      const ux = y * tz, uy = z * tx - x * tz, uz = -y * tx;
+      const e = SLOPE_SPAN / R, swl = Math.max(SLOPE_WL, minWl);
+      const h1 = hN(model, x + tx * e, y, z + tz * e, swl), h3 = hN(model, x - tx * e, y, z - tz * e, swl);
+      const h2 = hN(model, x + ux * e, y + uy * e, z + uz * e, swl), h4 = hN(model, x - ux * e, y - uy * e, z - uz * e, swl);
+      const ga = (h1 - h3) / (2 * SLOPE_SPAN), gb = (h2 - h4) / (2 * SLOPE_SPAN), g2 = ga * ga + gb * gb;
+      slope = Math.sqrt(g2 / (1 + g2));
+    }
     const h = gh[g];
     if (h < minH) minH = h; if (h > maxH) maxH = h;
     const curv = ((gh[gl] + gh[gr] + gh[gd] + gh[gu]) * 0.25 - h) / spacing;
@@ -108,7 +121,6 @@ export function buildChunk(model, job, cfg = biomeConfig(model.desc)) {
     w1[q] = (_w[4] * 255 + 0.5) | 0; w1[q + 1] = (_w[5] * 255 + 0.5) | 0; w1[q + 2] = (_w[6] * 255 + 0.5) | 0; w1[q + 3] = (_w[7] * 255 + 0.5) | 0;
     data[q] = h; data[q + 1] = curv; data[q + 2] = _m[0]; data[q + 3] = _m[1];
   }
-  void inv;
 
   // ---- skirts: copy of the edge vertex dropped along -up
   const skirt = job.skirt ?? Math.max(1.5, spacing * 2.5);
@@ -129,3 +141,5 @@ export function buildChunk(model, job, cfg = biomeConfig(model.desc)) {
     position, normal, w0, w1, data,
   };
 }
+
+function hN(model, x, y, z, wl) { const l = Math.sqrt(x * x + y * y + z * z); return model.height(x / l, y / l, z / l, wl); }

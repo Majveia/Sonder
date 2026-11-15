@@ -114,9 +114,9 @@ const FRAG_ALBEDO = /* glsl */`
     vec3 Pm = T_ROT * P, Nm = T_ROT * Ng, dxm = T_ROT * dpx, dym = T_ROT * dpy;
     vec3 bwm = pow(abs(Nm), vec3(6.0)); bwm /= (bwm.x + bwm.y + bwm.z);
     r = triLayer(float(ia), Pm, Nm, bwm, dxm, dym, uTileMid, q);
-    hlA = mix(hlA, r, kMid * 0.75); pA += (q * T_ROT) * 0.8 * kMid;
+    r.y = 0.5 + (r.y - 0.5) * 0.6; hlA = mix(hlA, r, kMid * 0.75); pA += (q * T_ROT) * 0.6 * kMid;
     r = triLayer(float(ib), Pm, Nm, bwm, dxm, dym, uTileMid, q);
-    hlB = mix(hlB, r, kMid * 0.75); pB += (q * T_ROT) * 0.8 * kMid;
+    r.y = 0.5 + (r.y - 0.5) * 0.6; hlB = mix(hlB, r, kMid * 0.75); pB += (q * T_ROT) * 0.6 * kMid;
     if (kNear > 0.0) {
       r = triLayer(float(ia), P, Ng, bw, dpx, dpy, uTileNear, q);
       hlA = vec2(mix(hlA.x, r.x, kNear * 0.7), hlA.y + (r.y - 0.5) * kNear); pA += q * kNear;
@@ -132,11 +132,14 @@ const FRAG_ALBEDO = /* glsl */`
     mx = max(mx, x[i]);
   }
   float fsum = 0.0; float f[8];
-  for (int i = 0; i < 8; i++) { f[i] = max(x[i] - (mx - 0.14), 0.0); fsum += f[i]; }
+  for (int i = 0; i < 8; i++) { f[i] = max(x[i] - (mx - 0.22), 0.0); fsum += f[i]; }
   // strata bands for cliffs / rock: sedimentary layering follows altitude (correct on a sphere)
   float m1 = vData.z, m2 = vData.w;
-  float bnd = 0.5 + 0.5 * sin(hgt * 0.19 + m2 * 1.7 + m1 * 4.0);
-  float bnd2 = 0.5 + 0.5 * sin(hgt * 0.83 + m1 * 6.0 + 1.3);
+  // band phases are anti-aliased: each band fades out once it is thinner than ~a pixel
+  float ph1 = hgt * 0.11 + m2 * 1.7 + m1 * 4.0, ph2 = hgt * 0.47 + m1 * 6.0 + 1.3;
+  float aa1 = 1.0 - smoothstep(0.6, 1.6, fwidth(ph1)), aa2 = 1.0 - smoothstep(0.6, 1.6, fwidth(ph2));
+  float bnd = 0.5 + 0.5 * sin(ph1) * aa1;
+  float bnd2 = 0.5 + 0.5 * sin(ph2) * aa2;
   vec3 strat = mix(uPal[6], uPal[5], smoothstep(0.35, 0.75, bnd));
   strat = mix(strat, uSandCol, smoothstep(0.78, 0.96, bnd2) * 0.55);
   strat *= 0.82 + 0.3 * bnd2;
@@ -145,6 +148,7 @@ const FRAG_ALBEDO = /* glsl */`
     float fi = f[i] / max(fsum, 1e-4);
     if (fi <= 0.0) continue;
     vec3 c = uPal[i];
+    if (i == 1) c = mix(c, uPal[2], smoothstep(0.1, 0.9, m2) * 0.3) * (0.9 + 0.2 * smoothstep(-0.6, 0.6, m1));
     if (i == 6) c = mix(c, strat, uStrata);
     else if (i == 5) c = mix(c, strat, uStrata * 0.45);
     float lum = i == ia ? hlA.y : (i == ib ? hlB.y : 0.5);

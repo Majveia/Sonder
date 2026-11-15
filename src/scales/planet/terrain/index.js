@@ -44,7 +44,7 @@ export default class Terrain {
     this.R = planet.R;
     const q = planet.ctx.quality || {};
     this.detail = q.detail ?? 1;
-    this.K = 1.7 * this.detail;
+    this.K = 1.55 * this.detail;
     const targetSpacing = q.tier === 'low' ? 1.6 : 0.9;
     let L = 0; while (nodeSize(this.R, L) / N > targetSpacing && L < 14) L++;
     this.maxLevel = L;
@@ -187,7 +187,7 @@ export default class Terrain {
 
   _distance(n) {
     let d = Infinity;
-    for (const f of this.foci) { const x = f.distanceTo(n.origin) - n.size * 0.5; if (x < d) d = x; }
+    for (const f of this.foci) { const x = f.distanceTo(n.origin) - n.size * 0.35; if (x < d) d = x; }
     return Math.max(0, d);
   }
 
@@ -285,12 +285,15 @@ export default class Terrain {
     mesh.frustumCulled = false;
     mesh.matrixAutoUpdate = false; mesh.updateMatrix();
     mesh.receiveShadow = true;
-    mesh.castShadow = n.level >= this.maxLevel - 4;
+    mesh.castShadow = n.level >= this.maxLevel - 3;
     mesh.visible = false;
     mesh.userData.node = n;
     n.mesh = mesh; n.state = 2; n.radius = m.radius; n.minH = m.minH; n.maxH = m.maxH;
     this.group.add(mesh);
     this._dispatch();
+    // refine without waiting for the next rendered frame (slow devices / loading): re-run the cheap
+    // traversal soon after results land, so children of new nodes get queued immediately
+    if (!this._relod) this._relod = setTimeout(() => { this._relod = 0; if (this.workers) this._lod(); }, 20);
   }
 
   _checkWaiters() {
@@ -360,7 +363,9 @@ export default class Terrain {
   }
 
   dispose() {
+    clearTimeout(this._relod);
     for (const w of this.workers || []) w.terminate();
+    this.workers = null;
     for (const m of this.group.children) m.geometry.dispose();
     this.planet.scene.remove(this.group);
     this.material?.dispose(); this.texture?.dispose();

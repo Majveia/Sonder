@@ -2,7 +2,7 @@
 //
 // in : { cmd: 'start', np, mesh, icMesh, boxMpc, cosmo, seed, ampBoost, aStart, every }
 // out: { type: 'meta', N, np, mesh, keyA: [a...] }
-//      { type: 'kf', index, a, pos: Uint16Array(N*3), fields: Uint8Array(N*2) }   (transferred)
+//      { type: 'kf', index, a, pos: Uint16Array(N*3), fields: Uint8Array(N) (5 bit density | 3 bit heat) }   (transferred)
 //      { type: 'progress', a, k }
 //      { type: 'haloes', haloes: [{ pos:[x,y,z] (fraction of box), mass, massSun, elong, particle }] }
 //      { type: 'done', ms, stats }
@@ -21,14 +21,15 @@ async function run(o) {
     np: o.np, mesh: o.mesh, icMesh: o.icMesh || 64, boxMpc: o.boxMpc, cosmo: o.cosmo,
     seed: o.seed, aStart: o.aStart || 0.02, ampBoost: o.ampBoost || 1,
   });
-  const sched = makeSchedule(sim.aStart, 1, o.dlog || 0.05, o.daMax || 0.016);
-  const every = o.every || 2;
+  const sched = makeSchedule(sim.aStart, 1, o.dlog || 0.06, o.daMax || 0.02);
+  const every = o.every || 3;
   // keyframes: step indices 0, every, 2*every, … and always the last step
   const kIdx = [];
   for (let i = 0; i < sched.length; i += every) kIdx.push(i);
   if (kIdx[kIdx.length - 1] !== sched.length - 1) kIdx.push(sched.length - 1);
   const keyA = kIdx.map((i) => sched[i]);
-  const nd = Math.max(16, Math.round(o.np * (o.densScale || 0.8)));
+  const nd = Math.min(128, Math.max(32, Math.round(o.np * 1.6)));
+  const nh = Math.max(16, Math.round(o.np * 0.8));
   self.postMessage({ type: 'meta', N: sim.N, np: sim.np, mesh: sim.M, keyA, steps: sched.length - 1, order: null });
 
   sim.initialConditions();
@@ -38,7 +39,7 @@ async function run(o) {
   let kf = 0;
   const emit = () => {
     const pos = sim.packPositions(new Uint16Array(sim.N * 3));
-    const fields = sim.packFields(new Uint8Array(sim.N * 2), nd);
+    const fields = sim.packFields(new Uint8Array(sim.N), nd, nh);
     self.postMessage({ type: 'kf', index: kf, a: sim.a, pos, fields }, [pos.buffer, fields.buffer]);
     kf++;
   };
