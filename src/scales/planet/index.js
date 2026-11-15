@@ -45,6 +45,11 @@ export default class PlanetScale extends Scale {
     /** planet radius in metres; the planet centre is the world origin */
     this.R = this.model.R;
     this.gravity = desc.gravity || 9.8;
+    /**
+     * Wavelength (metres) passed as `minWavelength` to model.height() for gameplay queries. The terrain
+     * system sets it to its finest vertex spacing so physics stands on the surface the mesh can show.
+     */
+    this.physicsWavelength = 0;
 
     // ---- shared world state -------------------------------------------------------------------
     /** unit vector toward the sun, world space (updated every frame from the day cycle) */
@@ -116,14 +121,14 @@ export default class PlanetScale extends Scale {
 
   // ---- helpers for systems ----------------------------------------------------------------------
   /** Terrain height (metres relative to R) under a world position. */
-  heightAt(pos) { const l = pos.length() || 1; return this.model.height(pos.x / l, pos.y / l, pos.z / l); }
+  heightAt(pos) { const l = pos.length() || 1; return this.model.height(pos.x / l, pos.y / l, pos.z / l, this.physicsWavelength); }
   /** Ground (or sea surface when `sea`) radius under a world position. */
   groundRadius(pos, sea = true) { const h = this.heightAt(pos); return this.R + (sea && this.model.hasOcean && h < 0 ? 0 : h); }
   /** Altitude of a world position above ground / sea. */
   altitudeOf(pos) { return pos.length() - this.groundRadius(pos); }
   /** World position on the surface in direction `dir` (unit), raised by `lift` metres. */
   surfacePoint(dir, lift = 0, out = new THREE.Vector3()) {
-    const h = this.model.height(dir.x, dir.y, dir.z);
+    const h = this.model.height(dir.x, dir.y, dir.z, this.physicsWavelength);
     return out.copy(dir).multiplyScalar(this.R + (this.model.hasOcean && h < 0 ? 0 : h) + lift);
   }
   _cellKey(pos) { const c = 64; return `${Math.floor(pos.x / c)},${Math.floor(pos.y / c)},${Math.floor(pos.z / c)}`; }
