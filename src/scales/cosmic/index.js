@@ -61,11 +61,11 @@ export default class CosmicScale extends Scale {
 
     this.camera.near = 0.02; this.camera.far = 6000; this.camera.fov = 50;
     this.camera.updateProjectionMatrix();
-    this.rig = new OrbitRig(this.camera, { distance: 150, minDistance: 0.6, maxDistance: 420, pitch: 0.32, yaw: 0.6, autoRotate: 0.035 });
+    this.rig = new OrbitRig(this.camera, { distance: 112, minDistance: 0.6, maxDistance: 420, pitch: 0.32, yaw: 0.6, autoRotate: 0.035 });
     this.rig.smooth = 3.2;
 
     this.grade = {
-      exposure: 1.0, bloom: 0.95, bloomThreshold: 0.28, bloomKnee: 0.7, bloomRadius: 0.86,
+      exposure: 1.0, bloom: 0.75, bloomThreshold: 0.55, bloomKnee: 0.6, bloomRadius: 0.8,
       contrast: 1.12, saturation: 1.18, lift: [0, 0, 0], gain: [1, 1, 1], vignette: 0.42, grain: 0.03, ca: 0.0026, toneMap: 1,
     };
 
@@ -86,7 +86,7 @@ export default class CosmicScale extends Scale {
     this.worker.postMessage({
       cmd: 'start', np, mesh, icMesh: 64, boxMpc: cos.boxMpc, seed: ctx.universe.seed,
       cosmo: { H0: cos.H0, omegaM: cos.omegaM, omegaL: cos.omegaL, omegaB: cos.omegaB, sigma8: cos.sigma8, ns: cos.ns },
-      ampBoost: Number(P.cosmicboost) || 1.2, aStart: A_START, every: 2,
+      ampBoost: Number(P.cosmicboost) || 1.3, aStart: A_START, every: 2,
     });
 
     // ---- early-universe glow (sky sphere) ----
@@ -121,7 +121,7 @@ export default class CosmicScale extends Scale {
     const shared = {
       uW: { value: new THREE.Vector4(1, 0, 0, 0) }, uDW: { value: new THREE.Vector4() }, uRef: { value: new THREE.Vector4(1, 0, 0, 0) },
       uC: { value: this.focus }, uBox: { value: BOX }, uTime: { value: 0 }, uPx: { value: 500 }, uReveal: { value: 1 },
-      uA: { value: 1 }, uEarly: { value: 0 }, uFocusDist: { value: 150 }, uSphere: { value: 0.48 },
+      uA: { value: 1 }, uLdGain: { value: 1 }, uJitter: { value: 0 }, uEarly: { value: 0 }, uFocusDist: { value: 150 }, uSphere: { value: 0.48 },
     };
     this.uniforms = shared;
     const mk = (vs, fs, extra) => new THREE.ShaderMaterial({
@@ -279,7 +279,9 @@ export default class CosmicScale extends Scale {
     u.uTime.value = time;
     u.uBox.value = boxW;
     u.uA.value = this._a;
-    u.uReveal.value = this._reveal;
+    u.uReveal.value = this._reveal * smoothstep(0.006, 0.026, this._a);
+    u.uLdGain.value = Math.min(5, Math.pow(1 / Math.max(0.02, this.cosmo.D(Math.max(this._a, A_START))), 0.7));
+    u.uJitter.value = (1 / this.np) * 0.9 * (1 - smoothstep(0.04, 0.25, this._a));
     u.uEarly.value = 1 - smoothstep(0.03, 0.14, this._a);
     // focus for depth cue: distance from camera to the box centre / orbit target
     const fd = this.cinematic ? this.camera.position.distanceTo(_v.set((this.focus.x - 0.5) * boxW, (this.focus.y - 0.5) * boxW, (this.focus.z - 0.5) * boxW)) : this.rig.distance;
@@ -296,9 +298,9 @@ export default class CosmicScale extends Scale {
     // recombination glow (a ≲ 0.001) cooling through amber and deep red into the dark ages
     const kHot = 1 - smoothstep(0.0, 0.004, a), kAmber = 1 - smoothstep(0.003, 0.011, a), kRed = 1 - smoothstep(0.008, 0.026, a);
     const col = g.uGlowCol.value;
-    col.setRGB(1.0, 0.86, 0.62).multiplyScalar(kHot * 2.2)
-      .add(_c1.setRGB(1.0, 0.42, 0.10).multiplyScalar((kAmber - kHot * 0.5) * 0.9))
-      .add(_c2.setRGB(0.55, 0.06, 0.03).multiplyScalar(Math.max(0, kRed - kAmber) * 0.6));
+    col.setRGB(1.0, 0.80, 0.55).multiplyScalar(kHot * 1.3)
+      .add(_c1.setRGB(1.0, 0.32, 0.06).multiplyScalar(Math.max(0, kAmber - kHot * 0.6) * 0.7))
+      .add(_c2.setRGB(0.5, 0.04, 0.03).multiplyScalar(Math.max(0, kRed - kAmber) * 0.45));
     g.uGlow.value = this._reveal;
     g.uTime.value = time;
     g.uMottle.value = 0.08 + 0.12 * smoothstep(0.002, 0.02, a);
@@ -373,9 +375,15 @@ export default class CosmicScale extends Scale {
     return out.set((x - 0.5) * boxW, (y - 0.5) * boxW, (z - 0.5) * boxW);
   }
 
+  _fracWorld(f, out) {
+    const C = this.focus, boxW = BOX * this._expScale();
+    const w = (v, c) => c + (((v - c + 0.5) % 1) + 1) % 1 - 0.5;
+    return out.set((w(f.x, C.x) - 0.5) * boxW, (w(f.y, C.y) - 0.5) * boxW, (w(f.z, C.z) - 0.5) * boxW);
+  }
+
   _updateHaloPositions() {
     if (!this.haloes.length || !this._ks) return;
-    for (const h of this.haloes) this.particleWorld(h.particle, h.position);
+    for (const h of this.haloes) { if (h.particle >= 0) this.particleWorld(h.particle, h.position); else this._fracWorld(h.frac, h.position); }
     if (this.home) this.homePosition.copy(this.home.position);
   }
 

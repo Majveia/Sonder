@@ -482,13 +482,17 @@ export class PMSim {
     const cellOf = new Map();
     out.forEach((h, i) => { h.particle = -1; h.best = 1e9; const k = (Math.floor(h.pos[2]) * M + Math.floor(h.pos[1])) * M + Math.floor(h.pos[0]); if (!cellOf.has(k)) cellOf.set(k, []); cellOf.get(k).push(i); });
     const x = this.x;
+    const near = (dx, dy, dz) => { const v = dx - M * Math.round(dx / M), w = dy - M * Math.round(dy / M), u = dz - M * Math.round(dz / M); return v * v + w * w + u * u; };
     for (let i = 0; i < this.N; i++) {
-      const k = (Math.floor(x[i * 3 + 2]) * M + Math.floor(x[i * 3 + 1])) * M + Math.floor(x[i * 3]);
-      const list = cellOf.get(k); if (!list) continue;
-      for (const hi of list) {
-        const h = out[hi];
-        const d = (x[i * 3] - h.pos[0]) ** 2 + (x[i * 3 + 1] - h.pos[1]) ** 2 + (x[i * 3 + 2] - h.pos[2]) ** 2;
-        if (d < h.best) { h.best = d; h.particle = i; }
+      const cx = Math.floor(x[i * 3]), cy = Math.floor(x[i * 3 + 1]), cz = Math.floor(x[i * 3 + 2]);
+      for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const k = (((cz + dz + M) % M) * M + ((cy + dy + M) % M)) * M + ((cx + dx + M) % M);
+        const list = cellOf.get(k); if (!list) continue;
+        for (const hi of list) {
+          const h = out[hi];
+          const d = near(x[i * 3] - h.pos[0], x[i * 3 + 1] - h.pos[1], x[i * 3 + 2] - h.pos[2]);
+          if (d < h.best) { h.best = d; h.particle = i; }
+        }
       }
     }
     // mass in units of 10^12 solar masses: cell mass = Ωm ρcrit (L/M)³

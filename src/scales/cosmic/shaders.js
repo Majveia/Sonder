@@ -19,22 +19,24 @@ uniform float uA;     // display scale factor
 uniform float uEarly; // 1 = dark-ages fog, 0 = structure colours
 uniform float uFocusDist;
 uniform float uSphere; // radius (box fractions) of the visible sphere around the focus
+uniform float uLdGain; // epoch-relative contrast: log density scaled by D(1)/D(a)^0.7 (early structure reads)
+uniform float uJitter; // early-time lattice jitter (box fractions) — hides the Lagrangian grid
 
 vec3 unwrapTo(vec3 p, vec3 r) { vec3 d = p - r; d -= floor(d + 0.5); return r + d; }
 
 // log10 density -> designed colour ramp; heat = normalised log velocity dispersion
 vec3 webRamp(float ld, float heat) {
   vec3 cVoid  = vec3(0.20, 0.07, 0.52);
-  vec3 cWall  = vec3(0.10, 0.20, 0.85);
+  vec3 cWall  = vec3(0.22, 0.12, 0.80);
   vec3 cFil   = vec3(0.02, 0.70, 0.82);
   vec3 cFil2  = vec3(0.40, 0.95, 1.00);
   vec3 cShock = vec3(1.00, 0.20, 0.52);
   vec3 cGold  = vec3(1.00, 0.60, 0.20);
   vec3 cWhite = vec3(1.00, 0.93, 0.82);
   vec3 c = mix(cVoid, cWall, smoothstep(-0.9, -0.15, ld));
-  c = mix(c, cFil, smoothstep(-0.15, 0.45, ld));
+  c = mix(c, cFil, smoothstep(0.0, 0.55, ld));
   c = mix(c, cFil2, smoothstep(0.45, 1.05, ld));
-  c = mix(c, cShock, smoothstep(0.32, 0.62, heat) * smoothstep(0.15, 0.8, ld) * 0.9);
+  c = mix(c, cShock, smoothstep(0.38, 0.62, heat) * smoothstep(0.5, 1.1, ld) * 0.85);
   c = mix(c, cGold, smoothstep(1.25, 1.85, ld));
   c = mix(c, cWhite, smoothstep(1.9, 2.6, ld));
   return c;
@@ -49,8 +51,9 @@ P particle() {
   vec3 q = a0 * uW.x + a1 * uW.y + a2 * uW.z + a3 * uW.w;
   o.vel = a0 * uDW.x + a1 * uDW.y + a2 * uDW.z + a3 * uDW.w;
   vec2 f = max(f0 * uW.x + f1 * uW.y + f2 * uW.z + f3 * uW.w, vec2(0.0));
-  o.ld = f.x * 5.0 - 1.5;
+  o.ld = (f.x * 5.0 - 1.5) * uLdGain;
   o.heat = f.y;
+  q += (hash33(vec3(float(gl_VertexID) * 0.013, 1.7, 3.1)) - 0.5) * uJitter;
   vec3 rel = fract(q - uC + 0.5) - 0.5;
   o.r = length(rel);
   o.q = uC + rel;
@@ -75,7 +78,8 @@ void main() {
   float dist = max(1e-3, -mv.z);
   float sphere = 1.0 - smoothstep(uSphere - 0.1, uSphere, p.r);
   // brightness: voids fall to black, filaments carry the light, nodes are left to the glints
-  float b = mix(0.05, 1.0, smoothstep(-0.8, 0.5, p.ld)) * mix(1.0, 0.55, smoothstep(1.2, 2.4, p.ld));
+  float bb = smoothstep(-0.35, 0.9, p.ld);
+  float b = mix(0.012, 1.0, bb * bb) * mix(1.0, 0.5, smoothstep(1.3, 2.4, p.ld));
   b *= 0.85 + 0.3 * p.rnd;
   float shimmer = 0.88 + 0.12 * sin(uTime * (0.6 + 1.7 * p.rnd) + p.rnd * 40.0);
   vec3 col = webRamp(p.ld, p.heat);
@@ -128,9 +132,9 @@ void main() {
   if (px > uMaxPx) { e = (uMaxPx * uMaxPx) / (px * px); px = uMaxPx; }
   if (px < 2.0) { e *= px * px / 4.0; px = 2.0; }
   e *= smoothstep(0.5, 6.0, dist);
-  float b = smoothstep(-0.7, 0.6, p.ld) * mix(1.0, 0.35, smoothstep(1.0, 2.2, p.ld));
-  vec3 col = webRamp(p.ld - 0.25, p.heat * 0.8);
-  col = mix(col, vec3(0.30, 0.32, 0.80), 0.35);
+  float b = smoothstep(-0.2, 0.9, p.ld) * mix(1.0, 0.45, smoothstep(1.2, 2.2, p.ld));
+  vec3 col = webRamp(p.ld - 0.1, p.heat);
+  col = mix(col, vec3(0.42, 0.20, 0.85), 0.25);
   col = mix(col, vec3(0.5, 0.45, 0.9), uEarly);
   b = mix(b, 0.6, uEarly);
   gl_PointSize = px;

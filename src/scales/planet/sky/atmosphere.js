@@ -42,11 +42,11 @@ export function atmosphereParams(desc, star, R) {
   };
   if (!a) return p;
   const d = a.density ?? 1;
-  const KR = 1.7; // grazing-path boost (see header)
+  const KR = 1.25; // grazing-path boost (see header)
   const ray = a.rayleigh || [5.8, 13.5, 33.1];
   for (let i = 0; i < 3; i++) p.betaR[i] = ray[i] * 1e-6 * (8000 / Hr) * d * KR;
   // aerosol zenith optical depth from mie + fog hints
-  const tauM = 0.045 * (a.mie ?? 1) * (0.45 + (a.fog ?? 0.4)) * d;
+  const tauM = Math.min(0.7, 0.1 * (a.mie ?? 1) * (0.45 + (a.fog ?? 0.4)) * d);
   const bm = tauM / Hm;
   p.betaMs = [bm, bm, bm];
   p.betaMe = [bm / 0.9, bm / 0.9, bm / 0.9];
@@ -184,31 +184,29 @@ export class AtmosphereModel {
    * Art-direction fit: adjust Rayleigh chroma until the zenith matches the `sky` hint and an aerosol tint
    * until the horizon matches `horizon` (both at a mid-morning sun), keeping overall optical depths.
    */
-  fit(strength = 0.85) {
+  fit(strength = 0.7) {
     const p = this.p; if (!p.has) return;
     const R = p.R, ro = [0, R + 2, 0];
     const sun = [Math.cos(0.6), Math.sin(0.6), 0];
     const zen = [0, 1, 0];
-    const hz = [0, Math.sin(0.05), Math.cos(0.05)];
-    const lR = luma(p.betaR), r0 = [...p.betaR];
-    const lM = luma(p.betaMs), m0 = [...p.betaMs];
-    const tint = [1, 1, 1];
     const out = { L: [0, 0, 0], T: 1 };
     const chroma = (c) => { const l = luma(c) || 1e-9; return c.map((v) => Math.max(v / l, 1e-4)); };
-    // targets: blend hint chroma with the physical result (keep some physics)
+    // aerosol colour from the horizon hint (dusty worlds get warm haze, clean ones near-white)
+    const hc = chroma(p.horizonHint).map((v) => Math.pow(v, 0.35));
+    const hm = Math.max(...hc);
+    const tint = hc.map((v) => Math.max(0.6, v / hm));
+    const lM = luma(p.betaMs);
+    for (let k = 0; k < 3; k++) p.betaMs[k] *= tint[k];
+    const lm = luma(p.betaMs); for (let k = 0; k < 3; k++) p.betaMs[k] *= lM / Math.max(lm, 1e-12);
+    // Rayleigh chroma so the zenith matches the sky hint (partially)
+    const lR = luma(p.betaR), r0 = [...p.betaR];
+    this.rebuild();
     this.sky(ro, zen, sun, out); const z0 = chroma(out.L);
-    this.sky(ro, hz, sun, out); const h0 = chroma(out.L);
     const zt = chroma(p.skyHint).map((v, i) => Math.pow(v, strength) * Math.pow(z0[i], 1 - strength));
-    const ht = chroma(p.horizonHint).map((v, i) => Math.pow(v, strength) * Math.pow(h0[i], 1 - strength));
-    for (let it = 0; it < 6; it++) {
+    for (let it = 0; it < 5; it++) {
       this.sky(ro, zen, sun, out); const zc = chroma(out.L);
-      for (let k = 0; k < 3; k++) p.betaR[k] = Math.min(r0[k] * 6, Math.max(r0[k] / 6, p.betaR[k] * Math.pow(zt[k] / zc[k], 0.9)));
+      for (let k = 0; k < 3; k++) p.betaR[k] = Math.min(r0[k] * 2.5, Math.max(r0[k] / 2.5, p.betaR[k] * Math.pow(zt[k] / zc[k], 0.9)));
       const l = luma(p.betaR); for (let k = 0; k < 3; k++) p.betaR[k] *= lR / l;
-      this.rebuild();
-      this.sky(ro, hz, sun, out); const hc = chroma(out.L);
-      for (let k = 0; k < 3; k++) tint[k] = Math.min(1.6, Math.max(0.25, tint[k] * Math.pow(ht[k] / hc[k], 1.2)));
-      const mx = Math.max(...tint); for (let k = 0; k < 3; k++) { tint[k] /= mx; p.betaMs[k] = m0[k] * tint[k]; }
-      const lm = luma(p.betaMs); for (let k = 0; k < 3; k++) p.betaMs[k] *= lM / Math.max(lm, 1e-12);
       this.rebuild();
     }
     p.mieTint = tint;
@@ -229,7 +227,7 @@ export function phaseM(c, g) {
 }
 function artT(T, tint, amt) {
   const l = luma(T);
-  const w = amt * sstep(0.92, 0.3, l);
+  const w = amt * sstep(0.6, 0.12, l);
   for (let k = 0; k < 3; k++) T[k] = Math.min(1, T[k] + (tint[k] * l - T[k]) * w);
   return T;
 }
