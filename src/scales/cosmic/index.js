@@ -121,7 +121,7 @@ export default class CosmicScale extends Scale {
     const shared = {
       uW: { value: new THREE.Vector4(1, 0, 0, 0) }, uDW: { value: new THREE.Vector4() }, uRef: { value: new THREE.Vector4(1, 0, 0, 0) },
       uC: { value: this.focus }, uBox: { value: BOX }, uTime: { value: 0 }, uPx: { value: 500 }, uReveal: { value: 1 },
-      uA: { value: 1 }, uLdGain: { value: 1 }, uJitter: { value: 0 }, uEarly: { value: 0 }, uFocusDist: { value: 150 }, uSphere: { value: 0.48 },
+      uA: { value: 1 }, uLdGain: { value: 1 }, uS: { value: 1 }, uJitter: { value: 0 }, uEarly: { value: 0 }, uFocusDist: { value: 150 }, uSphere: { value: 0.48 },
     };
     this.uniforms = shared;
     const mk = (vs, fs, extra) => new THREE.ShaderMaterial({
@@ -131,7 +131,7 @@ export default class CosmicScale extends Scale {
     // particle count compensation: fewer particles → each one a little brighter / larger
     const dens = Math.pow(80 / this.np, 3);
     this.filMat = mk(FIL_VERT, FIL_FRAG, { uSize: { value: 0.16 * Math.pow(dens, 0.33) }, uMinPx: { value: 1.15 }, uMaxPx: { value: 24 }, uGain: { value: 0.32 * dens } });
-    this.hazeMat = mk(HAZE_VERT, HAZE_FRAG, { uSize: { value: 2.4 }, uMaxPx: { value: 60 }, uGain: { value: 0.03 * dens } });
+    this.hazeMat = mk(HAZE_VERT, HAZE_FRAG, { uSize: { value: 2.4 }, uMaxPx: { value: 60 }, uGain: { value: 0.03 * Math.sqrt(dens) } });
     this.glintMat = mk(GLINT_VERT, GLINT_FRAG, { uSize: { value: 0.3 }, uMinPx: { value: 1.6 }, uMaxPx: { value: 36 }, uGain: { value: 2.6 }, uLight: { value: 1 } });
 
     this.haze = new THREE.Points(g, this.hazeMat);
@@ -278,6 +278,7 @@ export default class CosmicScale extends Scale {
     const u = this.uniforms;
     u.uTime.value = time;
     u.uBox.value = boxW;
+    u.uS.value = s;
     u.uA.value = this._a;
     u.uReveal.value = this._reveal * smoothstep(0.006, 0.026, this._a);
     u.uLdGain.value = Math.min(5, Math.pow(1 / Math.max(0.02, this.cosmo.D(Math.max(this._a, A_START))), 0.7));
@@ -298,12 +299,12 @@ export default class CosmicScale extends Scale {
     // recombination glow (a ≲ 0.001) cooling through amber and deep red into the dark ages
     const kHot = 1 - smoothstep(0.0, 0.004, a), kAmber = 1 - smoothstep(0.003, 0.011, a), kRed = 1 - smoothstep(0.008, 0.026, a);
     const col = g.uGlowCol.value;
-    col.setRGB(1.0, 0.80, 0.55).multiplyScalar(kHot * 1.3)
+    col.setRGB(1.0, 0.58, 0.26).multiplyScalar(kHot * 0.85)
       .add(_c1.setRGB(1.0, 0.32, 0.06).multiplyScalar(Math.max(0, kAmber - kHot * 0.6) * 0.7))
       .add(_c2.setRGB(0.5, 0.04, 0.03).multiplyScalar(Math.max(0, kRed - kAmber) * 0.45));
     g.uGlow.value = this._reveal;
     g.uTime.value = time;
-    g.uMottle.value = 0.08 + 0.12 * smoothstep(0.002, 0.02, a);
+    g.uMottle.value = 0.22 + 0.15 * smoothstep(0.002, 0.02, a);
     this.glow.visible = kRed > 0.001 && this._reveal > 0.001;
     this.glow.position.copy(this.camera.position);
 

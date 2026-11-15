@@ -20,6 +20,7 @@ uniform float uEarly; // 1 = dark-ages fog, 0 = structure colours
 uniform float uFocusDist;
 uniform float uSphere; // radius (box fractions) of the visible sphere around the focus
 uniform float uLdGain; // epoch-relative contrast: log density scaled by D(1)/D(a)^0.7 (early structure reads)
+uniform float uS;      // expansion scale (1 = comoving): sprite size and energy follow it
 uniform float uJitter; // early-time lattice jitter (box fractions) — hides the Lagrangian grid
 
 vec3 unwrapTo(vec3 p, vec3 r) { vec3 d = p - r; d -= floor(d + 0.5); return r + d; }
@@ -84,13 +85,13 @@ void main() {
   float shimmer = 0.88 + 0.12 * sin(uTime * (0.6 + 1.7 * p.rnd) + p.rnd * 40.0);
   vec3 col = webRamp(p.ld, p.heat);
   // dark-ages fog: nearly uniform, glassy
-  col = mix(col, vec3(0.32, 0.36, 0.75) * (0.75 + 1.4 * max(p.ld, -0.5)), uEarly);
-  b = mix(b, 0.55, uEarly);
+  col = mix(col, vec3(0.30, 0.30, 0.78) * (0.6 + 1.8 * max(p.ld, -0.4)), uEarly);
+  b = mix(b, 0.32, uEarly);
   // depth cue: far particles cooler and dimmer
   float far = smoothstep(uFocusDist * 0.7, uFocusDist * 2.0, dist);
   col = mix(col, col * vec3(0.55, 0.62, 1.0), far * 0.6);
   b *= mix(1.0, 0.55, far);
-  float px = uSize * (0.75 + 0.5 * p.rnd) * uPx / dist;
+  float px = uSize * uS * (0.75 + 0.5 * p.rnd) * uPx / dist;
   float e = 1.0;
   if (px < uMinPx) { e = (px * px) / (uMinPx * uMinPx); px = uMinPx; }
   if (px > uMaxPx) { e *= uMaxPx / px; px = uMaxPx; }
@@ -127,7 +128,7 @@ void main() {
   gl_Position = projectionMatrix * mv;
   float dist = max(1e-3, -mv.z);
   float sphere = 1.0 - smoothstep(uSphere - 0.14, uSphere, p.r);
-  float px = uSize * (0.6 + 0.8 * p.rnd) * uPx / dist;
+  float px = uSize * uS * (0.6 + 0.8 * p.rnd) * uPx / dist;
   float e = 1.0;
   if (px > uMaxPx) { e = (uMaxPx * uMaxPx) / (px * px); px = uMaxPx; }
   if (px < 2.0) { e *= px * px / 4.0; px = 2.0; }
@@ -171,7 +172,7 @@ void main() {
   float dist = max(1e-3, -mv.z);
   float sphere = 1.0 - smoothstep(uSphere - 0.1, uSphere, p.r);
   float rnd2 = hash11(p.id * 1.37 + 7.1);
-  float px = uSize * (0.5 + 1.0 * rnd2 * rnd2) * uPx / dist;
+  float px = uSize * uS * (0.5 + 1.0 * rnd2 * rnd2) * uPx / dist;
   float e = 1.0;
   if (px < uMinPx) { e = (px * px) / (uMinPx * uMinPx); px = uMinPx; }
   if (px > uMaxPx) { e *= uMaxPx / px; px = uMaxPx; }

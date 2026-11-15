@@ -66,6 +66,7 @@ export default class Terrain {
 
   async init() {
     const p = this.planet;
+    const tInit = performance.now();
     const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
     const n = Math.max(2, Math.min(4, cores - 1));
     this.workers = [];
@@ -110,6 +111,9 @@ export default class Terrain {
       this._lod();
       await new Promise((r) => setTimeout(r, 25));
     }
+    this.stats.initMs = Math.round(performance.now() - t0);
+    this.stats.texMs = Math.round(t0 - tInit);
+    console.log(`[T] terrain init: textures ${this.stats.texMs} ms, LOD ${this.stats.initMs} ms, ${this.stats.built} chunks (${this.stats.ms.toFixed(1)} ms avg), ready=${done}`);
   }
 
   // ---- public ---------------------------------------------------------------------------------
