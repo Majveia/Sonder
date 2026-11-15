@@ -19,7 +19,8 @@ import { cityName } from './names.js';
 
 const sstep = (a, b, x) => { let t = (x - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
 
-const DEFAULT_TERRAIN = { cf: 1.1, seaBias: 0.05, oceanDepth: 200, plains: 120, mAmp: 600, mFreq: 5, hAmp: 50, hFreq: 34, dAmp: 4, dFreq: 420, warp: 0.3, dunes: 0, duneFreq: 140, terrace: 0, terraceStep: 60, craters: 0, spires: 0 };
+const RIDGE_EPS = 0.08;
+const DEFAULT_TERRAIN ={ cf: 1.1, seaBias: 0.05, oceanDepth: 200, plains: 120, mAmp: 600, mFreq: 5, hAmp: 50, hFreq: 34, dAmp: 4, dFreq: 420, warp: 0.3, dunes: 0, duneFreq: 140, terrace: 0, terraceStep: 60, craters: 0, spires: 0 };
 
 export class PlanetModel {
   constructor(desc) {
@@ -72,7 +73,10 @@ export class PlanetModel {
       let ra = 1, rf = t.mFreq, rn = 0, prev = 1, rs = 0;
       for (let o = 0; o < 7; o++) {
         if (minWl > 0 && R / rf < minWl * 1.6) break;
-        let n = 1 - Math.abs(nB(px * rf, py * rf, pz * rf));
+        // softened abs(n) (crest radius a few % of the wavelength): eroded crests, and no C0 creases that a
+        // vertex grid cannot follow (keeps the mesh within centimetres of physics on ridgelines)
+        const nv = nB(px * rf, py * rf, pz * rf);
+        let n = 1 + RIDGE_EPS - Math.sqrt(nv * nv + RIDGE_EPS * RIDGE_EPS);
         n *= n; rs += n * ra * prev; rn += ra; prev = n; ra *= 0.5; rf *= 2.07;
       }
       m = rn > 0 ? rs / rn : 0;

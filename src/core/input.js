@@ -13,7 +13,8 @@
 //   input.settings          { sensitivity: 1, invertY: false } applied to `look` (menu writes it)
 //   input.block(key) / unblock(key) / blocked   suspend gameplay input (pause menu) without touching `enabled`
 //   input.consume(actionOrCode)   swallow a pending press so no scale sees it this frame
-//   input.onLock(cb)        pointer-lock changes -> cb(locked);  input.lockPointer() / unlockPointer()
+//   input.onLock(cb)        pointer-lock changes -> cb(locked, { self })  (self: released by unlockPointer())
+//                           input.lockPointer() / unlockPointer()
 //   Esc while the pointer is locked only releases the pointer; a second Esc reaches `back_out`.
 //   The touch stick has a radial dead-zone (stick.deadzone) and a haptic tick where supported.
 
@@ -61,6 +62,7 @@ export class Input {
     this._lockCbs = new Set();
     this._deviceCbs = new Set();
     this._unlockAt = -1e9;
+    this._selfUnlock = false;
 
     this._codes = new Set();
     this._hitCodes = new Set();
@@ -80,7 +82,7 @@ export class Input {
 
   setScheme(scheme) {
     this.scheme = { pointerLock: false, joystick: false, ...scheme };
-    if (!this.scheme.pointerLock && document.pointerLockElement) document.exitPointerLock();
+    if (!this.scheme.pointerLock && document.pointerLockElement) { this._selfUnlock = true; document.exitPointerLock(); }
     this.stick.active = false;
   }
 
@@ -101,7 +103,7 @@ export class Input {
     if (this.locked || !c.requestPointerLock) return;
     try { const p = c.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch { /* headless / denied */ }
   }
-  unlockPointer() { if (document.pointerLockElement) document.exitPointerLock(); }
+  unlockPointer() { if (document.pointerLockElement) { this._selfUnlock = true; document.exitPointerLock(); } }
   _setDevice(d) {
     if (this.device === d) return;
     this.device = d;
@@ -256,7 +258,9 @@ export class Input {
       const was = this.locked;
       this.locked = document.pointerLockElement === c;
       if (was && !this.locked) { this._unlockAt = performance.now(); this._codes.clear(); }
-      if (was !== this.locked) for (const cb of this._lockCbs) cb(this.locked);
+      const info = { self: this._selfUnlock };
+      if (!this.locked) this._selfUnlock = false;
+      if (was !== this.locked) for (const cb of this._lockCbs) cb(this.locked, info);
     });
 
     // touch
