@@ -135,10 +135,7 @@ export default class CosmicScale extends Scale {
     this.glintMat = mk(GLINT_VERT, GLINT_FRAG, { uSize: { value: 0.3 }, uMinPx: { value: 1.6 }, uMaxPx: { value: 36 }, uGain: { value: 2.6 }, uLight: { value: 1 } });
 
     this.haze = new THREE.Points(g, this.hazeMat);
-    this.haze.geometry = g;
     // haze uses a random subset: particles are shuffled in the worker, so any prefix is random
-    this.hazeGeo = g.clone(); // shares attributes (clone copies attribute references? no — rebuild below)
-    this.hazeGeo.dispose();
     this.hazeGeo = new THREE.BufferGeometry();
     for (const nm of Object.keys(g.attributes)) this.hazeGeo.setAttribute(nm, g.attributes[nm]);
     this.hazeGeo.boundingSphere = g.boundingSphere;
