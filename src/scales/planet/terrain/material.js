@@ -25,7 +25,7 @@ export function createTerrainMaterial(planet, texture) {
     uSandCol: { value: col('sand', '#c0b090') },
     uDeep: { value: new THREE.Color(desc.ocean ? desc.ocean.deep : '#000000') },
     uHasSea: { value: desc.ocean && desc.ocean.kind !== 'lava' ? 1 : 0 },
-    uStrata: { value: desc.type === 'desert' ? 1.0 : desc.type === 'crystal' ? 0.6 : 0.4 },
+    uStrata: { value: desc.type === 'desert' ? 1.0 : desc.type === 'crystal' ? 0.6 : 0.22 },
     uTileNear: { value: 1 / 3.1 },
     uTileMid: { value: 1 / 23.0 },
   };
@@ -141,7 +141,7 @@ const FRAG_ALBEDO = /* glsl */`
   float bnd = 0.5 + 0.5 * sin(ph1) * aa1;
   float bnd2 = 0.5 + 0.5 * sin(ph2) * aa2;
   vec3 strat = mix(uPal[6], uPal[5], smoothstep(0.35, 0.75, bnd));
-  strat = mix(strat, uSandCol, smoothstep(0.78, 0.96, bnd2) * 0.55);
+  strat = mix(strat, uSandCol, smoothstep(0.78, 0.96, bnd2) * 0.55 * smoothstep(0.7, 0.95, uStrata));
   strat *= 0.82 + 0.3 * bnd2;
   vec3 alb = vec3(0.0); float rough = 0.0;
   for (int i = 0; i < 8; i++) {
@@ -149,6 +149,8 @@ const FRAG_ALBEDO = /* glsl */`
     if (fi <= 0.0) continue;
     vec3 c = uPal[i];
     if (i == 1) c = mix(c, uPal[2], smoothstep(0.1, 0.9, m2) * 0.3) * (0.9 + 0.2 * smoothstep(-0.6, 0.6, m1));
+    // vegetation: a little less saturated and darker than the raw palette (lit, it otherwise reads neon)
+    if (i >= 1 && i <= 3) { float lc = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(lc), c, 0.8) * 0.82; }
     if (i == 6) c = mix(c, strat, uStrata);
     else if (i == 5) c = mix(c, strat, uStrata * 0.45);
     float lum = i == ia ? hlA.y : (i == ib ? hlB.y : 0.5);

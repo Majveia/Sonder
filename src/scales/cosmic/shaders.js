@@ -122,8 +122,10 @@ void main() {
   float far = smoothstep(uFocusDist * 0.8, uFocusDist * 3.0, dist);
   col = mix(col, col * vec3(0.5, 0.6, 1.0), far * 0.6);
   b *= mix(1.0, 0.6, far);
-  float px = uSize * uS * (0.75 + 0.5 * p.rnd) * uPx / dist;
-  float e = comp;
+  // thinned (far) particles become softer, larger splats with the same energy
+  float grow = min(sqrt(comp), 3.0);
+  float px = uSize * uS * (0.75 + 0.5 * p.rnd) * grow * uPx / dist;
+  float e = comp / (grow * grow);
   if (px < uMinPx) { e *= (px * px) / (uMinPx * uMinPx); px = uMinPx; }
   if (px > uMaxPx) { e *= uMaxPx / px; px = uMaxPx; }
   e *= smoothstep(0.0, 1.4, dist);  // very near: fade (bokeh) rather than a wall of sprites
@@ -206,8 +208,9 @@ void main() {
   gl_Position = projectionMatrix * mv;
   float dist = max(1e-3, -mv.z);
   float rnd2 = hash11(p.id * 1.37 + 7.1);
-  float px = uSize * uS * (0.45 + 1.0 * rnd2 * rnd2) * uPx / dist;
-  float e = comp;
+  float grow = min(sqrt(comp), 2.0);
+  float px = uSize * uS * (0.45 + 1.0 * rnd2 * rnd2) * grow * uPx / dist;
+  float e = comp / (grow * grow);
   if (px < uMinPx) { e *= (px * px) / (uMinPx * uMinPx); px = uMinPx; }
   if (px > uMaxPx) { e *= uMaxPx / px; px = uMaxPx; }
   e *= smoothstep(0.2, 2.0, dist);
@@ -253,27 +256,27 @@ uniform vec3 uFwd;     // camera forward (world)
 varying vec3 vDir;
 vec3 tempRamp(float t) {
   vec3 c = vec3(0.0);
-  c = mix(c, vec3(0.30, 0.012, 0.008), smoothstep(0.0, 0.22, t));     // deep blood red
-  c = mix(c, vec3(0.95, 0.26, 0.05) * 0.75, smoothstep(0.2, 0.48, t)); // ember orange
-  c = mix(c, vec3(1.0, 0.74, 0.40) * 1.05, smoothstep(0.45, 0.75, t)); // pale gold
-  c = mix(c, vec3(1.0, 0.95, 0.88) * 1.7, smoothstep(0.72, 1.0, t));   // white-hot
+  c = mix(c, vec3(0.22, 0.008, 0.006), smoothstep(0.0, 0.22, t));     // deep blood red
+  c = mix(c, vec3(0.95, 0.24, 0.04) * 0.5, smoothstep(0.2, 0.48, t));  // ember orange
+  c = mix(c, vec3(1.0, 0.70, 0.34) * 0.8, smoothstep(0.45, 0.75, t));  // pale gold
+  c = mix(c, vec3(1.0, 0.93, 0.84) * 1.15, smoothstep(0.78, 1.05, t));  // white-hot
   return c;
 }
 void main() {
   vec3 d = normalize(vDir);
   // boiling granular field: each octave drifts on its own
-  float n = 0.0, amp = 0.5, f = 3.0, norm = 0.0;
-  for (int i = 0; i < 6; i++) {
+  float n = 0.0, amp = 0.5, f = 7.0, norm = 0.0;
+  for (int i = 0; i < 7; i++) {
     float fi = float(i);
     vec3 drift = vec3(sin(fi * 1.7), cos(fi * 2.3), sin(fi * 0.9 + 1.0)) * uTime * 0.012 * (1.0 + fi * 0.6);
     n += amp * snoise(d * f + drift + fi * 7.31);
-    norm += amp; f *= 2.15; amp *= 0.62;
+    norm += amp; f *= 2.05; amp *= 0.72;
   }
   n /= norm;
-  float grain = snoise(d * 220.0 + uTime * 0.05) * 0.5;
-  float t = uHeat * (1.0 + 0.16 * n + 0.04 * grain);
+  float grain = snoise(d * 320.0 + vec3(0.0, uTime * 0.08, 0.0));
+  float t = uHeat * (1.0 + 0.2 * n + 0.05 * grain);
   vec3 col = tempRamp(clamp(t, 0.0, 1.0));
-  col *= 1.0 + 0.22 * n;
+  col *= (1.0 + 0.3 * n + 0.06 * grain) * mix(0.35, 1.0, uHeat);
   // radial falloff: darker toward the edges of view
   float k = dot(d, normalize(uFwd));
   col *= mix(0.28, 1.0, smoothstep(0.55, 0.98, k));

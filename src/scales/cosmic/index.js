@@ -73,7 +73,7 @@ export default class CosmicScale extends Scale {
     const mesh = q.tier === 'ultra' ? 128 : 64;
     this.np = np;
     // LOD: world distance inside which every particle of every image is drawn
-    this.lod = BOX * (q.tier === 'low' ? 0.32 : q.tier === 'medium' ? 0.42 : q.tier === 'ultra' ? 0.7 : 0.52);
+    this.lod = BOX * (q.tier === 'low' ? 0.32 : q.tier === 'medium' ? 0.42 : q.tier === 'ultra' ? 0.65 : 0.46);
     this.lodMin = q.tier === 'low' ? 0.04 : 0.06;
 
     this.camera.near = 0.02; this.camera.far = 6000; this.camera.fov = 55;
@@ -164,9 +164,9 @@ export default class CosmicScale extends Scale {
     });
     // particle-count compensation: fewer particles → each one a little brighter / larger
     const dens = Math.pow(72 / this.np, 3);
-    this.filMat = mk(FIL_VERT, FIL_FRAG, { uN: { value: N }, uSize: { value: 0.15 * Math.pow(dens, 0.33) }, uMinPx: { value: 1.1 }, uMaxPx: { value: 22 }, uGain: { value: 0.42 * dens } });
-    this.hazeMat = mk(HAZE_VERT, HAZE_FRAG, { uN: { value: N * HAZE_FRAC }, uSize: { value: 2.2 }, uMaxPx: { value: 56 }, uGain: { value: 0.012 * Math.sqrt(dens) } });
-    this.glintMat = mk(GLINT_VERT, GLINT_FRAG, { uN: { value: N }, uSize: { value: 0.26 }, uMinPx: { value: 1.5 }, uMaxPx: { value: 30 }, uGain: { value: 3.2 } });
+    this.filMat = mk(FIL_VERT, FIL_FRAG, { uN: { value: N }, uSize: { value: 0.15 * Math.pow(dens, 0.33) }, uMinPx: { value: 1.1 }, uMaxPx: { value: 22 }, uGain: { value: 0.55 * dens } });
+    this.hazeMat = mk(HAZE_VERT, HAZE_FRAG, { uN: { value: N * HAZE_FRAC }, uSize: { value: 2.2 }, uMaxPx: { value: 56 }, uGain: { value: 0.007 * Math.sqrt(dens) } });
+    this.glintMat = mk(GLINT_VERT, GLINT_FRAG, { uN: { value: N }, uSize: { value: 0.26 }, uMinPx: { value: 1.5 }, uMaxPx: { value: 30 }, uGain: { value: 3.2 }, uLight: { value: 1 } });
     this.layers = [
       { mat: this.hazeMat, frac: HAZE_FRAC, order: 1 },
       { mat: this.filMat, frac: 1, order: 2 },
@@ -372,7 +372,7 @@ export default class CosmicScale extends Scale {
 
     // ---- early-universe glow ----
     const a = this._a, g = this.glowMat.uniforms;
-    const heat = a <= 0.0004 ? 1 : clamp(1 - Math.log(a / 0.0004) / Math.log(0.026 / 0.0004), 0, 1);
+    const heat = 0.93 * (a <= 0.0004 ? 1 : clamp(1 - Math.log(a / 0.0004) / Math.log(0.026 / 0.0004), 0, 1));
     g.uHeat.value = heat;
     g.uGlow.value = this._reveal;
     g.uTime.value = time;

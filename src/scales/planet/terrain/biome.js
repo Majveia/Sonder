@@ -21,7 +21,7 @@ export const M = { sand: 0, grass: 1, grassDry: 2, forest: 3, soil: 4, rock: 5, 
 
 /** Biome slope is measured over SLOPE_SPAN metres on the terrain without octaves shorter than SLOPE_WL
  *  metres, so ground cover does not flicker with 1-m bumps and is identical at every mesh LOD finer than that. */
-export const SLOPE_SPAN = 4, SLOPE_WL = 8;
+export const SLOPE_SPAN = 12, SLOPE_WL = 24;
 
 const ss = (a, b, x) => { let t = (x - a) / (b - a); t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
 const sat = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -40,10 +40,10 @@ export function biomeConfig(desc) {
     beach: 2.6,                           // metres above sea level that stay sand
     bare: M.soil,                         // what un-vegetated flat ground is
     bareAlt: M.sand,                      // patchy alternative for bare ground
-    cliffSlope: 0.66,                     // sin(slope) where faces become cliff
-    rockSlope: 0.36,                      // sin(slope) where scree / bare rock starts
+    cliffSlope: 0.76,                     // sin(slope) where faces become cliff (~50 deg)
+    rockSlope: 0.52,                      // sin(slope) where scree / bare rock starts (~31 deg)
   };
-  if (type === 'desert') { cfg.bare = M.sand; cfg.bareAlt = M.soil; cfg.snowT = 0.05; cfg.cliffSlope = 0.6; cfg.rockSlope = 0.32; }
+  if (type === 'desert') { cfg.bare = M.sand; cfg.bareAlt = M.soil; cfg.snowT = 0.05; cfg.cliffSlope = 0.62; cfg.rockSlope = 0.36; }
   else if (type === 'ice') { cfg.snowT = 0.3; cfg.bare = M.snow; cfg.bareAlt = M.sand; }
   else if (type === 'lava') { cfg.snowT = -1; cfg.bare = M.soil; cfg.bareAlt = M.rock; cfg.beach = 0.8; }
   else if (type === 'barren') { cfg.snowT = -1; cfg.bare = M.sand; cfg.bareAlt = M.soil; }
@@ -85,7 +85,7 @@ export function biomeWeights(cfg, h, slope, temp, moist, j, w) {
   over(w, cfg.bareAlt, ss(0.15, 0.55, j) * 0.85);
   const vegAmt = cfg.veg * ss(0.1, 0.32, moist + j * 0.06) * (1 - ss(0.93, 1.0, temp));
   if (vegAmt > 0) {
-    const forest = ss(0.55, 0.68, moist + j * 0.09) * ss(cfg.treeT - 0.02, cfg.treeT + 0.1, temp) * (1 - ss(0.86, 0.96, temp));
+    const forest = ss(0.62, 0.76, moist + j * 0.12) * ss(cfg.treeT - 0.02, cfg.treeT + 0.1, temp) * (1 - ss(0.86, 0.96, temp));
     const dry = Math.max(ss(0.44, 0.3, moist + j * 0.07), ss(0.8, 0.92, temp + j * 0.03));
     // composite inside the vegetation layer: grass, then dry grass, then forest canopy floor
     const g = 1 - dry, d = dry * (1 - forest), f = forest;

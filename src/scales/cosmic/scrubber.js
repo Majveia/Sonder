@@ -6,10 +6,10 @@ const CSS = `
   display: flex; align-items: center; gap: 14px; opacity: 0; transition: opacity var(--d-3, 1.1s) var(--ease, ease); pointer-events: none; }
 .cw-time.on { opacity: 1; pointer-events: auto; }
 .sonder-ui.has-prompt .cw-time { bottom: calc(76px + var(--safe-b, 0px)); }
-.cw-btn { flex: none; font: inherit; color: var(--ink-2, #ccd); background: none; border: 0; padding: 4px; margin: 0; cursor: pointer; pointer-events: auto;
+.cw-time .cw-btn { flex: none; font: inherit; color: var(--ink-2, #ccd); background: none; border: 0; padding: 4px; margin: 0; cursor: pointer; pointer-events: auto;
   font-size: var(--t-2xs, 9px); letter-spacing: var(--tr-2, 0.26em); text-transform: uppercase; text-shadow: var(--halo-soft, none); transition: color var(--d-1, 0.18s); }
-.cw-btn:hover { color: var(--ink, #fff); }
-.cw-play { width: 18px; height: 18px; position: relative; padding: 0; }
+.cw-time .cw-btn:hover { color: var(--ink, #fff); }
+.cw-time .cw-play { width: 18px; height: 18px; position: relative; padding: 0; }
 .cw-play::before, .cw-play::after { content: ""; position: absolute; top: 4px; width: 2px; height: 10px; background: currentColor; transition: all var(--d-1, 0.18s); }
 .cw-play::before { left: 5px; } .cw-play::after { left: 11px; }
 .cw-play.paused::before { left: 6px; width: 0; height: 0; top: 4px; background: none; border-left: 8px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
